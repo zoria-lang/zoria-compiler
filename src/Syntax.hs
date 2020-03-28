@@ -8,13 +8,11 @@ newtype Identifier = Identifier T.Text
 
 newtype TypeVar = TypeVar T.Text
 
-newtype ConstrName = ConstrName T.Text
+newtype ConstructorName = ConstructorName T.Text
 
 newtype TypeName = TypeName T.Text
 
 newtype ModName = ModName T.Text
-
-type Name = T.Text
 
 data Located a = Located
     { location  :: SourcePos
@@ -22,7 +20,7 @@ data Located a = Located
     }
 
 newtype Program = Program 
-    { getModules :: [Module] 
+    { programModules :: [Module] 
     }
 
 data ModuleId = ModuleId
@@ -34,14 +32,14 @@ data Module = Module
     { moduleId      :: ModuleId
     , modulePath    :: FilePath
     , moduleImports :: [Import]
-    , moduleExports :: Maybe [Located Name]
+    , moduleExports :: Maybe [Located Identifier]
     , moduleDefs    :: [TopLevelDef]
     }
 
 data Import = Import
     { source    :: Module
     , importLoc :: SourcePos
-    , importIds :: Maybe [Located Name]
+    , importIds :: Maybe [Located Identifier]
     }
 
 data TopLevelDef
@@ -84,7 +82,7 @@ data Class = Class
     }
 
 data ValSig = ValSig
-    { valSigName :: Name
+    { valSigName :: Identifier
     , valSigType :: TypeSig
     }
 
@@ -102,7 +100,7 @@ data Instance = Instance
 
 data LetPattern
     = FuncPattern 
-        { letFuncName  :: Name
+        { letFuncName :: Identifier
         , letFuncArgs :: [Pattern]
         }
     | LetPattern Pattern
@@ -121,15 +119,15 @@ data PrimType
     | UnitT
 
 data TypeCase
-    = TypeCaseRecord ConstrName RecordType SourcePos
+    = TypeCaseRecord ConstructorName RecordType SourcePos
     -- ^ constructor of a record
-    | TypeCase ConstrName [TypeSig] SourcePos
+    | TypeCase ConstructorName [TypeSig] SourcePos
     -- ^ normal constructor (e.g. 'Just a')
 
 newtype RecordType = RecordType [RecordField]
 
 data RecordField = RecordField
-    { recordFieldName :: Name
+    { recordFieldName :: Identifier
     , recordFieldType :: TypeSig
     }
 
@@ -171,10 +169,10 @@ data PrimExpr
 
 data Expr 
     = Primitive PrimExpr SourcePos
-    | Var Name SourcePos
+    | Var Identifier SourcePos
     -- ^ an identifier
-    | Constructor ConstrName SourcePos
-    -- ^ an identifier which is a type constructor
+    | ScopedName ModuleId Identifier SourcePos
+    -- ^ name from a module (e.g. `Foo.Bar.x`)
     | And Expr Expr SourcePos
     -- ^ 'and' boolean operator with its left and right operands
     | Or Expr Expr SourcePos
@@ -188,7 +186,7 @@ data Expr
     --   store SourcePos as it is stored both in LetDef and (maybe) in Expr
     | MultiLetIn [LetDef] Expr
     -- ^ multiple mutually recursive local definitions.
-    | Lambda [Pattern] Expr (Maybe Name) SourcePos
+    | Lambda [Pattern] Expr (Maybe Identifier) SourcePos
     -- ^ lambda expression with the list of bindings (patterns) and
     --   the expression to evaluate upon the function call.
     --   May remember the name if it was defined in 'let'-definiiton.
@@ -204,7 +202,7 @@ data Expr
     --   pattern is choosen.
     | Extern FilePath T.Text SourcePos
     -- ^ used to import foreign functions from shared libraries.
-    | Internal Name SourcePos
+    | Internal Identifier SourcePos
     -- ^ built-in compiler value.
     | AnnotatedExpr Expr TypeSig SourcePos
     -- ^ expression with the type given explicitly (like 2 :: Int in Haskell).
@@ -225,13 +223,13 @@ data Pattern
     -- ^ a primitive constant (e.g. 1)
     | TuplePattern [Pattern] SourcePos
     -- ^ a tupple of patterns (e.g. (x, _))
-    | ConstructorPattern ConstrName [Pattern] SourcePos
+    | ConstructorPattern ConstructorName [Pattern] SourcePos
     -- ^ a constructor applied to patterns (e.g. 'Just x', 'Nothing', 'x:xs')
     | WildcardPattern SourcePos
     -- ^ a pattern that matches everything but discards the value ('_')
-    | VarPattern Name SourcePos
+    | VarPattern Identifier SourcePos
     -- ^ a pattern that matches everything and binds the value to the name
-    | NamedPattern Name Pattern SourcePos
+    | NamedPattern Identifier Pattern SourcePos
     -- ^ a pattern that is named as a whole (e.g. 'tree@(Node left x right)')
 
 instance Functor Located where
