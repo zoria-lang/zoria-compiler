@@ -4,6 +4,14 @@ import qualified Data.Text as T
 import Text.Megaparsec (SourcePos)
 
 
+newtype Identifier = Identifier T.Text
+
+newtype TypeVar = TypeVar T.Text
+
+newtype TypeName = TypeName T.Text
+
+newtype ModName = ModName T.Text
+
 type Name = T.Text
 
 data Located a = Located
@@ -15,13 +23,13 @@ newtype Program = Program
     { getModules :: [Module] 
     }
 
-data ModuleName = ModuleName
-    { modulePrefix :: [Name]
-    , moduleName   :: Name
+data ModuleId = ModuleId
+    { modulePrefix :: [ModName]
+    , moduleName   :: ModName
     }
 
 data Module = Module 
-    { moduleId      :: ModuleName
+    { moduleId      :: ModuleId
     , modulePath    :: FilePath
     , moduleImports :: [Import]
     , moduleExports :: Maybe [Located Name]
@@ -36,8 +44,8 @@ data Import = Import
 
 data TopLevelDef
     = TopLevelLet LetDef
-    | AliasDef    TypeAlias
-    | TypeDef     TypeDecl
+    | AliasDef    TAlias
+    | TypeDef     TDef
     | ClassDef    Class
     | InstanceDef Instance
 
@@ -47,6 +55,103 @@ data LetDef = LetDef
     , letExpr    :: Expr
     , letLoc     :: SourcePos
     }
+
+data TAlias = TAlias
+    { aliasName   :: TypeName
+    , aliasParams :: [TypeVar]
+    , aliasKind   :: Maybe KindSig
+    , aliasType   :: TypeSig
+    , alisLoc     :: SourcePos
+    }
+
+data TDef = TDef
+    { typeDefName   :: TypeName
+    , typeDefParams :: [TypeVar]
+    , typeDefKind   :: Maybe KindSig
+    , typeDefCases  :: [TypeCase]
+    , typeDefLoc    :: SourcePos
+    }
+
+data Class = Class
+    { className        :: TypeName
+    , classConstraints :: [Constraint]
+    , classParam       :: TypeVar
+    , classParamKind   :: Maybe KindSig
+    , classMembers     :: [ValSig]
+    , classLoc         :: SourcePos
+    }
+
+data ValSig = ValSig
+    { valSigName :: Name
+    , valSigType :: TypeSig
+    }
+
+data Constraint = Constraint
+    { constraintName  :: TypeName
+    , constraintParam :: TypeVar
+    }
+
+data Instance = Instance
+    { instanceClass   :: TypeName
+    , instanceType    :: TypeSig
+    , instanceMembers :: [LetDef]
+    , instanceLoc     :: SourcePos
+    }
+
+data LetPattern
+    = FuncPattern 
+        { letFuncName  :: Name
+        , letFuncArgs :: [Pattern]
+        }
+    | LetPattern Pattern
+
+data TypeSig = TypeSig
+    { typeSigConstraints :: [Constraint]
+    , typeSig            :: Type
+    }
+
+data PrimType
+    = IntT
+    | FloatT
+    | StringT
+    | CharT
+    | BoolT
+    | UnitT
+
+data TypeCase
+    = TypeCaseRecord TypeName RecordType SourcePos
+    -- ^ constructor of a record
+    | TypeCase TypeName [TypeSig] SourcePos
+    -- ^ normal constructor (eg. 'Just a')
+
+newtype RecordType = RecordType [RecordField]
+
+data RecordField = RecordField
+    { recordFieldName :: Name
+    , recordFieldType :: TypeSig
+    }
+
+data KindSig
+    = TypeKind
+    -- ^ the * kind
+    | TypeConstructorKind
+    -- ^ the (->) kind
+
+data Type
+    = TypeVariable  TypeVar
+    -- ^ polymorphic type (eg. 'a', 'b', 't')
+    | PrimitiveType PrimType
+    -- ^ One of the built-in primitive types
+    | FunctionType Type Type
+    -- ^ (a -> b) type
+    | NonPrimType TypeName
+    -- ^ non-primitive types without parameters (eg. Integer)
+    | ParamType TypeName [Type]
+    -- ^ concrete type with parameters (eg. 'Maybe a', '[a]', 'Array Int')
+    | PolymorphicParamType TypeVar [Type]
+    -- ^ polymorphic type with parameters (eg. '(m a)', '(t Int)')
+    | TupleType [Type]
+    -- ^ tuple of types (eg. '(Int, a, Float)')
 
 data Expr 
     = IntLit Int SourcePos
@@ -62,7 +167,9 @@ data Expr
     | UnitLit SourcePos
     -- ^ () value
     | Var Name SourcePos
-    -- ^ an identifier (note th)
+    -- ^ an identifier
+    | Constructor Name SourcePos
+    -- ^ an identifier which is a type constructor
     | And Expr Expr SourcePos
     -- ^ 'and' boolean operator with its left and right operands
     | Or Expr Expr SourcePos
@@ -74,7 +181,7 @@ data Expr
     | LetIn LetDef Expr
     -- ^ local definition. Binds only in the Expr following it. Does not
     --   store SourcePos as it is stored both in LetDef and (maybe) in Expr
-    | MultiLet [LetDef] Expr
+    | MultiLetIn [LetDef] Expr
     -- ^ multiple mutually recursive local definitions.
     | Lambda [Pattern] Expr (Maybe Name) SourcePos
     -- ^ lambda expression with the list of bindings (patterns) and
@@ -85,19 +192,23 @@ data Expr
     --   have different types.
     | Array [Expr] SourcePos
     -- ^ array literal.
-    | App Expr [Expr]
-    -- ^ application of an expression to some expresions.
+    | App Expr Expr
+    -- ^ application of an expression to another expression.
     | Match Expr [MatchCase] SourcePos
     -- ^ pattern matching of Expr with a list of patterns. First matching
     --   pattern is choosen.
-    | Extern Name Name SourcePos
+    | Extern FilePath T.Text SourcePos
     -- ^ used to import foreign functions from shared libraries.
     | Internal Name SourcePos
     -- ^ built-in compiler value.
     | AnnotatedExpr Expr TypeSig SourcePos
     -- ^ expression with the type given explicitly (like 2 :: Int in Haskell).
     | FormatString [FormatExpr] SourcePos
-    -- ^ interpolated string
+    -- ^ string literals and expressions to evaluate, show and concatenate
+
+data FormatExpr
+    = FmtStr  T.Text
+    | FmtExpr Expr
 
 instance Functor Located where
     fmap f (Located loc a) = Located loc $ f a
