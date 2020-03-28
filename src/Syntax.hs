@@ -124,7 +124,7 @@ data TypeCase
     = TypeCaseRecord ConstrName RecordType SourcePos
     -- ^ constructor of a record
     | TypeCase ConstrName [TypeSig] SourcePos
-    -- ^ normal constructor (eg. 'Just a')
+    -- ^ normal constructor (e.g. 'Just a')
 
 newtype RecordType = RecordType [RecordField]
 
@@ -141,19 +141,19 @@ data KindSig
 
 data Type
     = TypeVariable  TypeVar
-    -- ^ polymorphic type (eg. 'a', 'b', 't')
+    -- ^ polymorphic type (e.g. 'a', 'b', 't')
     | PrimitiveType PrimType
     -- ^ One of the built-in primitive types
     | FunctionType Type Type
     -- ^ (a -> b) type
     | NonPrimType TypeName
-    -- ^ non-primitive types without parameters (eg. Integer)
+    -- ^ non-primitive types without parameters (e.g. Integer)
     | ParamType TypeName [Type]
-    -- ^ concrete type with parameters (eg. 'Maybe a', '[a]', 'Array Int')
+    -- ^ concrete type with parameters (e.g. 'Maybe a', '[a]', 'Array Int')
     | PolymorphicParamType TypeVar [Type]
-    -- ^ polymorphic type with parameters (eg. '(m a)', '(t Int)')
+    -- ^ polymorphic type with parameters (e.g. '(m a)', '(t Int)')
     | TupleType [Type]
-    -- ^ tuple of types (eg. '(Int, a, Float)')
+    -- ^ tuple of types (e.g. '(Int, a, Float)')
 
 data PrimExpr
     = IntLit Int
@@ -222,15 +222,17 @@ data MatchCase = MatchCase
 
 data Pattern
     = ConstPattern PrimExpr SourcePos
-    -- ^ a primitive constant (eg. 1)
+    -- ^ a primitive constant (e.g. 1)
     | TuplePattern [Pattern] SourcePos
-    -- ^ a tupple of patterns (eg. (x, _))
+    -- ^ a tupple of patterns (e.g. (x, _))
     | ConstructorPattern ConstrName [Pattern] SourcePos
-    -- ^ a constructor applied to patterns (eg. 'Just x', 'Nothing', 'x:xs')
+    -- ^ a constructor applied to patterns (e.g. 'Just x', 'Nothing', 'x:xs')
     | WildcardPattern SourcePos
     -- ^ a pattern that matches everything but discards the value ('_')
     | VarPattern Name SourcePos
     -- ^ a pattern that matches everything and binds the value to the name
+    | NamedPattern Name Pattern SourcePos
+    -- ^ a pattern that is named as a whole (e.g. 'tree@(Node left x right)')
 
 instance Functor Located where
     fmap f (Located loc a) = Located loc $ f a
