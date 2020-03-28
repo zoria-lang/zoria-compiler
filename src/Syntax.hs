@@ -8,6 +8,8 @@ newtype Identifier = Identifier T.Text
 
 newtype TypeVar = TypeVar T.Text
 
+newtype ConstrName = ConstrName T.Text
+
 newtype TypeName = TypeName T.Text
 
 newtype ModName = ModName T.Text
@@ -119,9 +121,9 @@ data PrimType
     | UnitT
 
 data TypeCase
-    = TypeCaseRecord TypeName RecordType SourcePos
+    = TypeCaseRecord ConstrName RecordType SourcePos
     -- ^ constructor of a record
-    | TypeCase TypeName [TypeSig] SourcePos
+    | TypeCase ConstrName [TypeSig] SourcePos
     -- ^ normal constructor (eg. 'Just a')
 
 newtype RecordType = RecordType [RecordField]
@@ -153,22 +155,25 @@ data Type
     | TupleType [Type]
     -- ^ tuple of types (eg. '(Int, a, Float)')
 
-data Expr 
-    = IntLit Int SourcePos
+data PrimExpr
+    = IntLit Int
     -- ^ 64 bit signed integers 
-    | CharLit Char SourcePos
+    | CharLit Char
     -- ^ single unicode character
-    | FloatLit Double SourcePos
+    | FloatLit Double
     -- ^ double precision floating number
-    | StringLit T.Text SourcePos
+    | StringLit T.Text
     -- ^ non-format string literal
-    | BoolLit Bool SourcePos
+    | BoolLit Bool
     -- ^ boolean value
-    | UnitLit SourcePos
+    | UnitLit
     -- ^ () value
+
+data Expr 
+    = Primitive PrimExpr SourcePos
     | Var Name SourcePos
     -- ^ an identifier
-    | Constructor Name SourcePos
+    | Constructor ConstrName SourcePos
     -- ^ an identifier which is a type constructor
     | And Expr Expr SourcePos
     -- ^ 'and' boolean operator with its left and right operands
@@ -209,6 +214,23 @@ data Expr
 data FormatExpr
     = FmtStr  T.Text
     | FmtExpr Expr
+
+data MatchCase = MatchCase
+    { matchCasePattern :: Pattern
+    , matchCaseExpr    :: Expr
+    }
+
+data Pattern
+    = ConstPattern PrimExpr SourcePos
+    -- ^ a primitive constant (eg. 1)
+    | TuplePattern [Pattern] SourcePos
+    -- ^ a tupple of patterns (eg. (x, _))
+    | ConstructorPattern ConstrName [Pattern] SourcePos
+    -- ^ a constructor applied to patterns (eg. 'Just x', 'Nothing', 'x:xs')
+    | WildcardPattern SourcePos
+    -- ^ a pattern that matches everything but discards the value ('_')
+    | VarPattern Name SourcePos
+    -- ^ a pattern that matches everything and binds the value to the name
 
 instance Functor Located where
     fmap f (Located loc a) = Located loc $ f a
