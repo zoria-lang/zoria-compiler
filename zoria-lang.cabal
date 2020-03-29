@@ -16,5 +16,8 @@ extra-source-files:  README.md
 executable zoriac
   hs-source-dirs:      src
   main-is:             Main.hs
+  other-modules:       Syntax
   default-language:    Haskell2010
-  build-depends:       base >= 4.7 && < 5
+  build-depends:       base >= 4.7 && < 5,
+                       text >= 1.2.4.0,
+                       megaparsec >= 8.0.0
