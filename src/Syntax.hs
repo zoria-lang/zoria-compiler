@@ -117,6 +117,7 @@ data PrimType
     | CharT
     | BoolT
     | UnitT
+    | CPtrT
 
 data TypeCase
     = TypeCaseRecord ConstructorName RecordType SourcePos
@@ -134,7 +135,7 @@ data RecordField = RecordField
 data KindSig
     = TypeKind
     -- ^ the * kind
-    | TypeConstructorKind
+    | TypeConstructorKind KindSig KindSig
     -- ^ the (->) kind
 
 data Type
