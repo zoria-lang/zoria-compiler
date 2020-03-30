@@ -1,4 +1,9 @@
 module Main where
 
+import GetOpt
+
+
 main :: IO ()
-main = putStrLn "hello world"
+main = do
+    options <- getOptions
+    print options
