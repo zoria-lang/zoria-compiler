@@ -2,7 +2,7 @@ module GetOpt
     ( Options(..)
     , Arguments(..)
     , ModulePath(..)
-    , parseOptions
+    , getOptions
     )
 where
 
@@ -85,8 +85,8 @@ options =
         "Extern module path"
     ]
 
-parseOptions :: IO Options
-parseOptions = do
+getOptions :: IO Options
+getOptions = do
     args <- getArgs
     let (optActions, nonOptions, errors) = getOpt Permute options args
     foldl (>>=) (return defaultOptions) optActions
