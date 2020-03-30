@@ -20,8 +20,8 @@ data Located a = Located
     }
   deriving Show
 
-newtype Program = Program 
-    { programModules :: [Module] 
+newtype Program a = Program 
+    { programModules :: [Module a]
     }
   deriving Show
 
@@ -31,17 +31,17 @@ data ModuleId = ModuleId
     }
   deriving Show
 
-data Module = Module 
+data Module a = Module 
     { moduleId      :: ModuleId
     , modulePath    :: FilePath
     , moduleImports :: [Import]
     , moduleExports :: Maybe [Located ImportedValue]
-    , moduleDefs    :: [TopLevelDef]
+    , moduleDefs    :: [TopLevelDef a]
     }
   deriving Show
 
 data Import = Import
-    { source    :: Module
+    { source    :: ModuleId
     , importLoc :: SourcePos
     , importIds :: Maybe [Located ImportedValue]
     }
@@ -51,21 +51,21 @@ data ImportedValue
     = ImportedIdentifier Identifier 
     -- ^ imported variable (e.g. '(>>=)', 'map')
     | ImportedType TypeName [ConstructorName]
-    -- ^ type and constructor import (e.g. Maybe(Nothing), Either(), Map)
+    -- ^ type and constructor import (e.g. Maybe(Nothing), Either(), Map(..))
   deriving Show
 
-data TopLevelDef
-    = TopLevelLet LetDef
+data TopLevelDef a
+    = TopLevelLet (LetDef a)
     | AliasDef    TAlias
     | TypeDef     TDef
     | ClassDef    Class
-    | InstanceDef Instance
+    | InstanceDef (Instance a)
   deriving Show
 
-data LetDef = LetDef
-    { letPattern :: LetPattern
+data LetDef a = LetDef
+    { letPattern :: LetPattern a
     , letTypeSig :: Maybe TypeSig
-    , letExpr    :: Expr
+    , letExpr    :: Expr a
     , letLoc     :: SourcePos
     }
   deriving Show
@@ -110,20 +110,20 @@ data Constraint = Constraint
     }
   deriving Show
 
-data Instance = Instance
+data Instance a = Instance
     { instanceClass   :: TypeName
     , instanceType    :: TypeSig
-    , instanceMembers :: [LetDef]
+    , instanceMembers :: [LetDef a]
     , instanceLoc     :: SourcePos
     }
   deriving Show
 
-data LetPattern
+data LetPattern a
     = FuncPattern 
         { letFuncName :: Identifier
-        , letFuncArgs :: [Pattern]
+        , letFuncArgs :: [Pattern a]
         }
-    | LetPattern Pattern
+    | LetPattern (Pattern a)
   deriving Show
 
 data TypeSig = TypeSig
@@ -197,72 +197,72 @@ data PrimExpr
     -- ^ () value
   deriving Show
 
-data Expr 
-    = Primitive PrimExpr SourcePos
-    | Var Identifier SourcePos
+data Expr a
+    = Primitive PrimExpr SourcePos a
+    | Var Identifier SourcePos a
     -- ^ an identifier
-    | ScopedName ModuleId Identifier SourcePos
+    | ScopedName ModuleId Identifier SourcePos a
     -- ^ name from a module (e.g. `Foo.Bar.x`)
-    | And Expr Expr SourcePos
+    | And (Expr a) (Expr a) SourcePos a
     -- ^ 'and' boolean operator with its left and right operands
-    | Or Expr Expr SourcePos
+    | Or (Expr a) (Expr a) SourcePos a
     -- ^ 'or' boolean operator with its left and right operands
-    | If Expr Expr Expr SourcePos
+    | If (Expr a) (Expr a) (Expr a) SourcePos a
     -- ^ conditional expression with the condition, consequence and alternative
-    | Block [Expr] SourcePos
+    | Block [Expr a] SourcePos a
     -- ^ list of expressions to be evaluated in order
-    | LetIn LetDef Expr
+    | LetIn (LetDef a) (Expr a) a
     -- ^ local definition. Binds only in the Expr following it. Does not
     --   store SourcePos as it is stored both in LetDef and (maybe) in Expr
-    | MultiLetIn [LetDef] Expr
+    | MultiLetIn [LetDef a] (Expr a) a
     -- ^ multiple mutually recursive local definitions.
-    | Lambda [Pattern] Expr (Maybe Identifier) SourcePos
+    | Lambda [Pattern a] (Expr a) (Maybe Identifier) SourcePos a
     -- ^ lambda expression with the list of bindings (patterns) and
     --   the expression to evaluate upon the function call.
     --   May remember the name if it was defined in 'let'-definiiton.
-    | Tuple [Expr] SourcePos
+    | Tuple [Expr a] SourcePos a
     -- ^ non-empty list of expressions. Tuples of different arity
     --   have different types.
-    | Array [Expr] SourcePos
+    | Array [Expr a] SourcePos a
     -- ^ array literal.
-    | App Expr Expr
+    | App (Expr a) (Expr a) a
     -- ^ application of an expression to another expression.
-    | Match Expr [MatchCase] SourcePos
+    | Match (Expr a) [MatchCase a] SourcePos a
     -- ^ pattern matching of Expr with a list of patterns. First matching
     --   pattern is choosen.
-    | Extern FilePath T.Text SourcePos
+    | Extern FilePath T.Text SourcePos a
     -- ^ used to import foreign functions from shared libraries.
-    | Internal Identifier SourcePos
+    | Internal Identifier SourcePos a
     -- ^ built-in compiler value.
-    | AnnotatedExpr Expr TypeSig SourcePos
+    | AnnotatedExpr (Expr a) TypeSig SourcePos a
     -- ^ expression with the type given explicitly (like 2 :: Int in Haskell).
-    | FormatString [FormatExpr] SourcePos
+    | FormatString [FormatExpr a] SourcePos a
     -- ^ string literals and expressions to evaluate, show and concatenate
   deriving Show
 
-data FormatExpr
+data FormatExpr a
     = FmtStr  T.Text
-    | FmtExpr Expr
+    | FmtExpr (Expr a)
   deriving Show
 
-data MatchCase = MatchCase
-    { matchCasePattern :: Pattern
-    , matchCaseExpr    :: Expr
+data MatchCase a = MatchCase
+    { matchCasePattern :: Pattern a
+    , matchCaseExpr    :: Expr a
     }
   deriving Show
 
-data Pattern
-    = ConstPattern PrimExpr SourcePos
+data Pattern a
+    = ConstPattern PrimExpr SourcePos a
     -- ^ a primitive constant (e.g. 1)
-    | TuplePattern [Pattern] SourcePos
+    | TuplePattern [Pattern a] SourcePos a
     -- ^ a tupple of patterns (e.g. (x, _))
-    | ConstructorPattern ConstructorName [Pattern] SourcePos
+    | ConstructorPattern ConstructorName [Pattern a] SourcePos a
     -- ^ a constructor applied to patterns (e.g. 'Just x', 'Nothing', 'x:xs')
-    | WildcardPattern SourcePos
+    | WildcardPattern SourcePos a
     -- ^ a pattern that matches everything but discards the value ('_')
-    | VarPattern Identifier SourcePos
+    | VarPattern Identifier SourcePos a
     -- ^ a pattern that matches everything and binds the value to the name
-    | NamedPattern Identifier Pattern SourcePos
+    | NamedPattern Identifier (Pattern a) SourcePos a
     -- ^ a pattern that is named as a whole (e.g. 'tree@(Node left x right)')
   deriving Show
 
