@@ -1,24 +1,33 @@
-module GetOpt where
+module GetOpt
+    ( Options(..)
+    , Arguments(..)
+    , ModulePath(..)
+    , parseOptions
+    )
+where
 
 import System.Console.GetOpt
 import qualified Data.Text as T
 import System.Exit (exitWith, ExitCode(ExitSuccess))
-import System.Environment (getProgName)
+import System.Environment (getProgName, getArgs)
 
 data Arguments = Arguments
     { argsOptions :: Options
     , argsInput   :: FilePath
     }
+  deriving Show
 
 data Options = Options
     { optOutput  :: FilePath
     , optModules :: [ModulePath]
     }
+  deriving Show
 
 data ModulePath = ModulePath
     { optModName :: T.Text
     , optModPath :: FilePath
     }
+  deriving Show
 
 defaultOptions :: Options
 defaultOptions = Options
@@ -26,11 +35,28 @@ defaultOptions = Options
     , optOutput  = "a.out"
     }
 
-addModuleOpt :: String -> Options -> Options
-addModuleOpt modOpt opts = opts { optModules = modPath : modules }
+addModuleOpt :: String -> Options -> Either IOError Options
+addModuleOpt modOpt opts = do
+    modPath <- splitModOpt modOpt
+    return $ opts { optModules = modPath : modules }
   where
     modules = optModules opts
-    modPath = undefined
+    splitModOpt :: String -> Either IOError ModulePath
+    splitModOpt str = case split str of
+        Just ("", _) -> Left emptyNameErr
+        Just (_, "") -> Left emptyPathErr
+        Nothing -> Left sepErr
+        Just (modName, modPath) -> Right $ ModulePath (T.pack modName) modPath
+      where
+        sepErr = userError $ '\'': str ++ "': missing the ':' separator!"
+        emptyPathErr = userError $ '\'':str ++ "': module path is empty!"
+        emptyNameErr = userError $ '\'':str ++ "': module name is empty!"
+        split :: String -> Maybe (String, String)
+        split "" = Nothing
+        split (':':path) = Just ("", path)
+        split (c:str) = do
+            (name, path) <- split str
+            return (c : name, path)
 
 options :: [OptDescr (Options -> IO Options)]
 options = 
@@ -51,18 +77,16 @@ options =
         ))
         "Show help"
     , Option "m" ["module"]
-        (ReqArg (\arg opts -> return $ addModuleOpt arg opts) "MODULE:PATH")
+        (ReqArg (
+            \arg opts -> case addModuleOpt arg opts of
+                Right opts -> return opts
+                Left err   -> ioError err
+            ) "MODULE:PATH")
         "Extern module path"
     ]
 
-
-
-
-
-
-
-
-
-
-
-
+parseOptions :: IO Options
+parseOptions = do
+    args <- getArgs
+    let (optActions, nonOptions, errors) = getOpt Permute options args
+    foldl (>>=) (return defaultOptions) optActions
