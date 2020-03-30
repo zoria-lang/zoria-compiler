@@ -4,43 +4,55 @@ import qualified Data.Text as T
 import Text.Megaparsec (SourcePos)
 
 
-newtype Identifier = Identifier T.Text
+newtype Identifier = Identifier T.Text deriving Show
 
-newtype TypeVar = TypeVar T.Text
+newtype TypeVar = TypeVar T.Text deriving Show
 
-newtype ConstructorName = ConstructorName T.Text
+newtype ConstructorName = ConstructorName T.Text deriving Show
 
-newtype TypeName = TypeName T.Text
+newtype TypeName = TypeName T.Text deriving Show
 
-newtype ModName = ModName T.Text
+newtype ModName = ModName T.Text deriving Show
 
 data Located a = Located
     { location  :: SourcePos
     , unlocated :: a
     }
+  deriving Show
 
 newtype Program = Program 
     { programModules :: [Module] 
     }
+  deriving Show
 
 data ModuleId = ModuleId
     { modulePrefix :: [ModName]
     , moduleName   :: ModName
     }
+  deriving Show
 
 data Module = Module 
     { moduleId      :: ModuleId
     , modulePath    :: FilePath
     , moduleImports :: [Import]
-    , moduleExports :: Maybe [Located Identifier]
+    , moduleExports :: Maybe [Located ImportedValue]
     , moduleDefs    :: [TopLevelDef]
     }
+  deriving Show
 
 data Import = Import
     { source    :: Module
     , importLoc :: SourcePos
-    , importIds :: Maybe [Located Identifier]
+    , importIds :: Maybe [Located ImportedValue]
     }
+  deriving Show
+
+data ImportedValue
+    = ImportedIdentifier Identifier 
+    -- ^ imported variable (e.g. '(>>=)', 'map')
+    | ImportedType TypeName [ConstructorName]
+    -- ^ type and constructor import (e.g. Maybe(Nothing), Either(), Map)
+  deriving Show
 
 data TopLevelDef
     = TopLevelLet LetDef
@@ -48,6 +60,7 @@ data TopLevelDef
     | TypeDef     TDef
     | ClassDef    Class
     | InstanceDef Instance
+  deriving Show
 
 data LetDef = LetDef
     { letPattern :: LetPattern
@@ -55,6 +68,7 @@ data LetDef = LetDef
     , letExpr    :: Expr
     , letLoc     :: SourcePos
     }
+  deriving Show
 
 data TAlias = TAlias
     { aliasName   :: TypeName
@@ -63,6 +77,7 @@ data TAlias = TAlias
     , aliasType   :: TypeSig
     , alisLoc     :: SourcePos
     }
+  deriving Show
 
 data TDef = TDef
     { typeDefName   :: TypeName
@@ -71,6 +86,7 @@ data TDef = TDef
     , typeDefCases  :: [TypeCase]
     , typeDefLoc    :: SourcePos
     }
+  deriving Show
 
 data Class = Class
     { className        :: TypeName
@@ -80,16 +96,19 @@ data Class = Class
     , classMembers     :: [ValSig]
     , classLoc         :: SourcePos
     }
+  deriving Show
 
 data ValSig = ValSig
     { valSigName :: Identifier
     , valSigType :: TypeSig
     }
+  deriving Show
 
 data Constraint = Constraint
     { constraintName  :: TypeName
     , constraintParam :: TypeVar
     }
+  deriving Show
 
 data Instance = Instance
     { instanceClass   :: TypeName
@@ -97,6 +116,7 @@ data Instance = Instance
     , instanceMembers :: [LetDef]
     , instanceLoc     :: SourcePos
     }
+  deriving Show
 
 data LetPattern
     = FuncPattern 
@@ -104,11 +124,13 @@ data LetPattern
         , letFuncArgs :: [Pattern]
         }
     | LetPattern Pattern
+  deriving Show
 
 data TypeSig = TypeSig
     { typeSigConstraints :: [Constraint]
     , typeSig            :: Type
     }
+  deriving Show
 
 data PrimType
     = IntT
@@ -118,25 +140,30 @@ data PrimType
     | BoolT
     | UnitT
     | CPtrT
+  deriving Show
 
 data TypeCase
     = TypeCaseRecord ConstructorName RecordType SourcePos
     -- ^ constructor of a record
     | TypeCase ConstructorName [TypeSig] SourcePos
     -- ^ normal constructor (e.g. 'Just a')
+  deriving Show
 
-newtype RecordType = RecordType [RecordField]
+
+newtype RecordType = RecordType [RecordField] deriving Show
 
 data RecordField = RecordField
     { recordFieldName :: Identifier
     , recordFieldType :: TypeSig
     }
+  deriving Show
 
 data KindSig
     = TypeKind
     -- ^ the * kind
     | TypeConstructorKind KindSig KindSig
     -- ^ the (->) kind
+  deriving Show
 
 data Type
     = TypeVariable  TypeVar
@@ -153,6 +180,7 @@ data Type
     -- ^ polymorphic type with parameters (e.g. '(m a)', '(t Int)')
     | TupleType [Type]
     -- ^ tuple of types (e.g. '(Int, a, Float)')
+  deriving Show
 
 data PrimExpr
     = IntLit Int
@@ -167,6 +195,7 @@ data PrimExpr
     -- ^ boolean value
     | UnitLit
     -- ^ () value
+  deriving Show
 
 data Expr 
     = Primitive PrimExpr SourcePos
@@ -209,15 +238,18 @@ data Expr
     -- ^ expression with the type given explicitly (like 2 :: Int in Haskell).
     | FormatString [FormatExpr] SourcePos
     -- ^ string literals and expressions to evaluate, show and concatenate
+  deriving Show
 
 data FormatExpr
     = FmtStr  T.Text
     | FmtExpr Expr
+  deriving Show
 
 data MatchCase = MatchCase
     { matchCasePattern :: Pattern
     , matchCaseExpr    :: Expr
     }
+  deriving Show
 
 data Pattern
     = ConstPattern PrimExpr SourcePos
@@ -232,6 +264,7 @@ data Pattern
     -- ^ a pattern that matches everything and binds the value to the name
     | NamedPattern Identifier Pattern SourcePos
     -- ^ a pattern that is named as a whole (e.g. 'tree@(Node left x right)')
+  deriving Show
 
 instance Functor Located where
     fmap f (Located loc a) = Located loc $ f a
