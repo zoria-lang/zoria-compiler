@@ -1,6 +1,5 @@
 module GetOpt
     ( Options(..)
-    , Arguments(..)
     , ModulePath(..)
     , getOptions
     )
@@ -10,16 +9,13 @@ import System.Console.GetOpt
 import qualified Data.Text as T
 import System.Exit (exitWith, ExitCode(ExitSuccess))
 import System.Environment (getProgName, getArgs)
+import Control.Monad (when)
 
-data Arguments = Arguments
-    { argsOptions :: Options
-    , argsInput   :: FilePath
-    }
-  deriving Show
 
 data Options = Options
     { optOutput  :: FilePath
     , optModules :: [ModulePath]
+    , optInputs  :: [FilePath]
     }
   deriving Show
 
@@ -33,6 +29,7 @@ defaultOptions :: Options
 defaultOptions = Options
     { optModules = []
     , optOutput  = "a.out"
+    , optInputs  = []
     }
 
 addModuleOpt :: String -> Options -> Either IOError Options
@@ -89,4 +86,9 @@ getOptions :: IO Options
 getOptions = do
     args <- getArgs
     let (optActions, nonOptions, errors) = getOpt Permute options args
-    foldl (>>=) (return defaultOptions) optActions
+    opts <- foldl (>>=) (return defaultOptions) optActions
+    when (null nonOptions) $
+        ioError (userError "No input files specified!")
+    when (not . null $ errors) $
+        ioError (userError $ concat errors)
+    return $ opts { optInputs = nonOptions }
