@@ -123,9 +123,9 @@ keyword :: T.Text -> Parser ()
 keyword kw = (lexeme . P.try) $ P.string kw *> P.notFollowedBy nameChar
 
 primExpr :: Parser (Expr ())
-primExpr = integer
+primExpr = P.try float
     <|> character
-    <|> float
+    <|> integer
     <|> string
     <|> boolean
     <|> unit
