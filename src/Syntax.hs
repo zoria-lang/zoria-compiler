@@ -20,7 +20,7 @@ data Located a = Located
   deriving Show
 
 newtype Program a = Program 
-    { programModules :: [Module a]
+    { programRoot :: Module a
     }
   deriving Show
 
@@ -33,16 +33,17 @@ data ModuleId = ModuleId
 data Module a = Module 
     { moduleId      :: ModuleId
     , modulePath    :: FilePath
-    , moduleImports :: [Import]
+    , moduleImports :: [Import a]
     , moduleExports :: Maybe [Located ImportedValue]
     , moduleDefs    :: [TopLevelDef a]
     }
   deriving Show
 
-data Import = Import
-    { source    :: ModuleId
-    , importLoc :: Position
-    , importIds :: Maybe [Located ImportedValue]
+data Import a = Import
+    { importMod  :: Module a
+    , importName :: ModuleId
+    , importLoc  :: Position
+    , importIds  :: Maybe [Located ImportedValue]
     }
   deriving Show
 
