@@ -1,8 +1,7 @@
 module Syntax where
 
 import qualified Data.Text as T
-import Text.Megaparsec (SourcePos)
-
+import Utility (Position)
 
 newtype Identifier = Identifier T.Text deriving Show
 
@@ -15,7 +14,7 @@ newtype TypeName = TypeName T.Text deriving Show
 newtype ModName = ModName T.Text deriving Show
 
 data Located a = Located
-    { location  :: SourcePos
+    { location  :: Position
     , unlocated :: a
     }
   deriving Show
@@ -42,7 +41,7 @@ data Module a = Module
 
 data Import = Import
     { source    :: ModuleId
-    , importLoc :: SourcePos
+    , importLoc :: Position
     , importIds :: Maybe [Located ImportedValue]
     }
   deriving Show
@@ -66,7 +65,7 @@ data LetDef a = LetDef
     { letPattern :: LetPattern a
     , letTypeSig :: Maybe TypeSig
     , letExpr    :: Expr a
-    , letLoc     :: SourcePos
+    , letLoc     :: Position
     }
   deriving Show
 
@@ -75,7 +74,7 @@ data TAlias = TAlias
     , aliasParams :: [TypeVar]
     , aliasKind   :: Maybe KindSig
     , aliasType   :: TypeSig
-    , alisLoc     :: SourcePos
+    , alisLoc     :: Position
     }
   deriving Show
 
@@ -84,7 +83,7 @@ data TDef = TDef
     , typeDefParams :: [TypeVar]
     , typeDefKind   :: Maybe KindSig
     , typeDefCases  :: [TypeCase]
-    , typeDefLoc    :: SourcePos
+    , typeDefLoc    :: Position
     }
   deriving Show
 
@@ -94,7 +93,7 @@ data Class = Class
     , classParam       :: TypeVar
     , classParamKind   :: Maybe KindSig
     , classMembers     :: [ValSig]
-    , classLoc         :: SourcePos
+    , classLoc         :: Position
     }
   deriving Show
 
@@ -114,7 +113,7 @@ data Instance a = Instance
     { instanceClass   :: TypeName
     , instanceType    :: TypeSig
     , instanceMembers :: [LetDef a]
-    , instanceLoc     :: SourcePos
+    , instanceLoc     :: Position
     }
   deriving Show
 
@@ -143,9 +142,9 @@ data PrimType
   deriving Show
 
 data TypeCase
-    = TypeCaseRecord ConstructorName RecordType SourcePos
+    = TypeCaseRecord ConstructorName RecordType Position
     -- ^ constructor of a record
-    | TypeCase ConstructorName [TypeSig] SourcePos
+    | TypeCase ConstructorName [TypeSig] Position
     -- ^ normal constructor (e.g. 'Just a')
   deriving Show
 
@@ -198,45 +197,45 @@ data PrimExpr
   deriving Show
 
 data Expr a
-    = Primitive PrimExpr SourcePos a
-    | Var Identifier SourcePos a
+    = Primitive PrimExpr Position a
+    | Var Identifier Position a
     -- ^ an identifier
-    | ScopedName ModuleId Identifier SourcePos a
+    | ScopedName ModuleId Identifier Position a
     -- ^ name from a module (e.g. `Foo.Bar.x`)
-    | And (Expr a) (Expr a) SourcePos a
+    | And (Expr a) (Expr a) Position a
     -- ^ 'and' boolean operator with its left and right operands
-    | Or (Expr a) (Expr a) SourcePos a
+    | Or (Expr a) (Expr a) Position a
     -- ^ 'or' boolean operator with its left and right operands
-    | If (Expr a) (Expr a) (Expr a) SourcePos a
+    | If (Expr a) (Expr a) (Expr a) Position a
     -- ^ conditional expression with the condition, consequence and alternative
-    | Block [Expr a] SourcePos a
+    | Block [Expr a] Position a
     -- ^ list of expressions to be evaluated in order
     | LetIn (LetDef a) (Expr a) a
     -- ^ local definition. Binds only in the Expr following it. Does not
-    --   store SourcePos as it is stored both in LetDef and (maybe) in Expr
+    --   store Position as it is stored both in LetDef and (maybe) in Expr
     | MultiLetIn [LetDef a] (Expr a) a
     -- ^ multiple mutually recursive local definitions.
-    | Lambda [Pattern a] (Expr a) (Maybe Identifier) SourcePos a
+    | Lambda [Pattern a] (Expr a) (Maybe Identifier) Position a
     -- ^ lambda expression with the list of bindings (patterns) and
     --   the expression to evaluate upon the function call.
     --   May remember the name if it was defined in 'let'-definiiton.
-    | Tuple [Expr a] SourcePos a
+    | Tuple [Expr a] Position a
     -- ^ non-empty list of expressions. Tuples of different arity
     --   have different types.
-    | Array [Expr a] SourcePos a
+    | Array [Expr a] Position a
     -- ^ array literal.
     | App (Expr a) (Expr a) a
     -- ^ application of an expression to another expression.
-    | Match (Expr a) [MatchCase a] SourcePos a
+    | Match (Expr a) [MatchCase a] Position a
     -- ^ pattern matching of Expr with a list of patterns. First matching
     --   pattern is choosen.
-    | Extern FilePath T.Text SourcePos a
+    | Extern FilePath T.Text Position a
     -- ^ used to import foreign functions from shared libraries.
-    | Internal Identifier SourcePos a
+    | Internal Identifier Position a
     -- ^ built-in compiler value.
-    | AnnotatedExpr (Expr a) TypeSig SourcePos a
+    | AnnotatedExpr (Expr a) TypeSig Position a
     -- ^ expression with the type given explicitly (like 2 :: Int in Haskell).
-    | FormatString [FormatExpr a] SourcePos a
+    | FormatString [FormatExpr a] Position a
     -- ^ string literals and expressions to evaluate, show and concatenate
   deriving Show
 
@@ -252,17 +251,17 @@ data MatchCase a = MatchCase
   deriving Show
 
 data Pattern a
-    = ConstPattern PrimExpr SourcePos a
+    = ConstPattern PrimExpr Position a
     -- ^ a primitive constant (e.g. 1)
-    | TuplePattern [Pattern a] SourcePos a
+    | TuplePattern [Pattern a] Position a
     -- ^ a tupple of patterns (e.g. (x, _))
-    | ConstructorPattern ConstructorName [Pattern a] SourcePos a
+    | ConstructorPattern ConstructorName [Pattern a] Position a
     -- ^ a constructor applied to patterns (e.g. 'Just x', 'Nothing', 'x:xs')
-    | WildcardPattern SourcePos a
+    | WildcardPattern Position a
     -- ^ a pattern that matches everything but discards the value ('_')
-    | VarPattern Identifier SourcePos a
+    | VarPattern Identifier Position a
     -- ^ a pattern that matches everything and binds the value to the name
-    | NamedPattern Identifier (Pattern a) SourcePos a
+    | NamedPattern Identifier (Pattern a) Position a
     -- ^ a pattern that is named as a whole (e.g. 'tree@(Node left x right)')
   deriving Show
 
