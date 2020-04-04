@@ -14,6 +14,7 @@ import Control.Monad.Trans.Class (lift)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (void, forM)
 import Control.Applicative ((<|>))
+import Data.Functor (($>))
 import Data.Void (Void)
 import Utility (Position(..))
 import GetOpt (Options(..))
@@ -84,7 +85,7 @@ parseFile path = do
 
 moduleHeader :: Parser (Module ())
 moduleHeader = do
-    symbol "module"
+    keyword "module"
     name <- uppercaseName
     exports <- moduleIdentifierList
     return undefined
@@ -117,6 +118,55 @@ moduleIdentifierList = Just <$> list <|> pure Nothing
     list = separatedList "{" "}" exportElem ","
     exportElem :: Parser (Located ImportedValue)
     exportElem = undefined
+
+keyword :: T.Text -> Parser ()
+keyword kw = (lexeme . P.try) $ P.string kw *> P.notFollowedBy nameChar
+
+primExpr :: Parser (Expr ())
+primExpr = integer
+    <|> character
+    <|> float
+    <|> string
+    <|> boolean
+    <|> unit
+
+float :: Parser (Expr ())
+float = withPos $ \pos -> do
+    num <- L.signed (pure ()) L.float
+    return $ Primitive (FloatLit num) pos ()
+
+integer :: Parser (Expr ())
+integer = withPos $ \pos -> do
+    -- TODO: check for overflows
+    num <- L.signed (pure ()) parseInt
+    return $ Primitive (IntLit num) pos ()
+  where
+    parseInt :: Parser Int
+    parseInt = (P.string "0o" >> L.octal)
+        <|> (P.string "0x" >> L.hexadecimal)
+        <|> (P.string "0b" >> L.binary)
+        <|> L.decimal
+
+string :: Parser (Expr ())
+string = withPos $ \pos -> do
+    str <- P.char '"' *> (T.pack <$> P.manyTill L.charLiteral (P.char '"'))
+    return $ Primitive (StringLit str) pos ()
+
+character :: Parser (Expr ())
+character = withPos $ \pos -> do
+    c <- P.char '\'' *> L.charLiteral <* P.char '\''
+    return $ Primitive (CharLit c) pos ()
+
+boolean :: Parser (Expr ())
+boolean = withPos $ \pos -> do
+    val <- (keyword "True" $> True) <|> (keyword "False" $> False)
+    return $ Primitive (BoolLit val) pos ()
+
+unit :: Parser (Expr ())
+unit = withPos $ \pos -> do
+    symbol "("
+    symbol ")"
+    return $ Primitive UnitLit pos ()
 
 nameChar :: Parser Char
 nameChar = P.choice [P.alphaNumChar, P.char '\'', P.char '_']
