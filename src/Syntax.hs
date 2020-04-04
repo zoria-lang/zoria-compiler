@@ -180,6 +180,8 @@ data Type
     -- ^ polymorphic type with parameters (e.g. '(m a)', '(t Int)')
     | TupleType [Type]
     -- ^ tuple of types (e.g. '(Int, a, Float)')
+    | ArrayType Type
+    -- ^ array of elements of concrete type (e.g '[|Int|]', [| [|Float|] |])
   deriving Show
 
 data PrimExpr
