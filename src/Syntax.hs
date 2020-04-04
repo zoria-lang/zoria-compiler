@@ -175,7 +175,7 @@ data Type
     | NonPrimType TypeName
     -- ^ non-primitive types without parameters (e.g. Integer)
     | ParamType TypeName [Type]
-    -- ^ concrete type with parameters (e.g. 'Maybe a', '[a]', 'Array Int')
+    -- ^ concrete type with parameters (e.g. 'Maybe a', '[a]')
     | PolymorphicParamType TypeVar [Type]
     -- ^ polymorphic type with parameters (e.g. '(m a)', '(t Int)')
     | TupleType [Type]
