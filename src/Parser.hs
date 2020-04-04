@@ -11,6 +11,7 @@ import qualified Text.Megaparsec.Char as P
 import qualified Text.Megaparsec.Char.Lexer as L
 import Control.Monad.State (StateT, runStateT, get, put)
 import Control.Monad.Trans.Class (lift)
+import Control.Monad.IO.Class (liftIO)
 import Data.Void (Void)
 import Control.Monad (void, mapM_)
 import Utility (Position(..))
@@ -46,12 +47,6 @@ symbol' x = withPos $ \pos -> do
     symbol <- symbol x
     return (pos, symbol)
 
-liftState :: IOState a -> Parser a
-liftState = lift
-
-liftIO :: IO a -> Parser a
-liftIO = lift . lift
-
 runParser :: Parser a 
           -> FilePath 
           -> T.Text 
@@ -68,9 +63,9 @@ test :: Parser ()
 test = withPos $ \pos -> do
     liftIO $ putStrLn $ show pos
     len <- length <$> P.many "*"
-    st <- liftState get
+    st <- lift get
     liftIO $ putStrLn $ "Old value: " ++ show st ++ "\n"
-    liftState $ put (st + len)
-    st' <- liftState get
+    lift $ put (st + len)
+    st' <- lift get
     liftIO $ putStrLn $ "New value: " ++ show st' ++ "\n"
     return ()
