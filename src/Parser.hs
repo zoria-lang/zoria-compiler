@@ -1,8 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Parser 
-    (Parser, runParser, test) 
-where
+module Parser (Parser, runParser, newParserState) where
 
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -17,15 +15,43 @@ import Data.Void (Void)
 import Control.Monad (void, mapM_)
 import Utility (Position(..))
 import GetOpt (Options(..), ModulePath(..))
+import Data.Map as Map
+import Syntax as AST
 
-
-type ParserState = Int -- TODO: change
 
 type GetOptIO = ReaderT Options IO
 type StateIO  = StateT ParserState GetOptIO
 type Parser = P.ParsecT Void T.Text StateIO
 type Errors = P.ParseErrorBundle T.Text Void
 
+data ParserState = ParserState
+    { stateOperators :: Map.Map Priority OperatorTable
+    , stateModule    :: [ModuleHeader]
+    }
+  deriving Show
+
+type Priority = Int
+
+newtype ModuleHeader = ModuleHeader
+    { moduleName :: AST.ModuleId
+    }
+  deriving Show
+
+data CustomOp = CustomOp
+    { opSymbol :: T.Text
+    , opOrigin :: AST.ModuleId
+    }
+  deriving Show
+
+data OperatorTable = OpTable
+    { opsLeft  :: [CustomOp]
+    , opsRight :: [CustomOp]
+    , opsNone  :: [CustomOp]
+    }
+  deriving Show
+
+newParserState :: ParserState
+newParserState = ParserState Map.empty []
 
 withPos :: P.MonadParsec e s m => (Position -> m a) -> m a
 withPos f = do
@@ -66,17 +92,3 @@ runParser parser file input initState options = do
   where
     state = P.runParserT parser file input
     reader = runStateT state initState
-
--- example:
-test :: Parser ()
-test = withPos $ \pos -> do
-    liftIO $ putStrLn $ show pos
-    len <- length <$> P.many "*"
-    opts <- getopt
-    liftIO $ putStrLn $ show opts
-    st <- lift get
-    liftIO $ putStrLn $ "Old value: " ++ show st ++ "\n"
-    lift $ put (st + len)
-    st' <- lift get
-    liftIO $ putStrLn $ "New value: " ++ show st' ++ "\n"
-    return ()
