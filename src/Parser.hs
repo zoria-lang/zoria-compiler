@@ -12,11 +12,11 @@ import Control.Monad.State (StateT, runStateT, get, put)
 import Control.Monad.Trans.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (forM)
+import Control.Monad (void, forM)
+import Control.Applicative ((<|>))
 import Data.Void (Void)
-import Control.Monad (void, mapM_)
 import Utility (Position(..))
-import GetOpt (Options(..), ModulePath(..))
+import GetOpt (Options(..))
 import Data.Map as Map
 import Data.Set as Set
 import Syntax as AST
@@ -24,8 +24,9 @@ import Syntax as AST
 
 type GetOptIO = ReaderT Options IO
 type StateIO  = StateT ParserState GetOptIO
-type Parser = P.ParsecT Void T.Text StateIO
-type Errors = P.ParseErrorBundle T.Text Void
+type Parser   = P.ParsecT Void T.Text StateIO
+
+type Errors   = P.ParseErrorBundle T.Text Void
 
 data ParserState = ParserState
     { stateOperators :: Map.Map Priority OperatorTable
@@ -54,11 +55,15 @@ data OperatorTable = OpTable
     }
   deriving Show
 
+-- TODO: decide what the path should be
 stdLibraryPath :: FilePath
 stdLibraryPath = undefined
 
-stdPrelude :: FilePath
-stdPrelude = stdLibraryPath </> "Prelude"
+preludeName :: FilePath
+preludeName = "Core.zo"
+
+stdPreludePath :: FilePath
+stdPreludePath = stdLibraryPath </> preludeName
 
 newParserState :: ParserState
 newParserState = ParserState Map.empty Set.empty []
@@ -80,8 +85,41 @@ parseFile path = do
 moduleHeader :: Parser (Module ())
 moduleHeader = do
     symbol "module"
+    name <- uppercaseName
+    exports <- moduleIdentifierList
     return undefined
 
+uppercaseName :: Parser T.Text
+uppercaseName = lexeme $ do
+    first <- P.upperChar
+    rest  <- P.some nameChar
+    return . T.pack $ first : rest
+
+lowercaseName :: Parser T.Text 
+lowercaseName = lexeme $ do
+    first <- P.lowerChar
+    rest  <- P.some nameChar
+    return . T.pack $ first : rest
+
+located :: Parser a -> Parser (Located a)
+located parser = withPos $ \pos -> Located pos <$> parser
+
+separatedList :: T.Text -> T.Text -> Parser a -> T.Text -> Parser [a]
+separatedList start end elem sep = start' *> (elements <|> pure []) <* end' 
+  where
+    start' = symbol start
+    end'   = symbol end
+    elements = pure (:) <*> elem <*> P.many (symbol sep *> elem)
+
+moduleIdentifierList :: Parser (Maybe [Located ImportedValue])
+moduleIdentifierList = Just <$> list <|> pure Nothing
+  where
+    list = separatedList "{" "}" exportElem ","
+    exportElem :: Parser (Located ImportedValue)
+    exportElem = undefined
+
+nameChar :: Parser Char
+nameChar = P.choice [P.alphaNumChar, P.char '\'', P.char '_']
 
 runParser :: Parser a 
           -> FilePath
@@ -95,6 +133,11 @@ runParser parser file input initState options = do
   where
     state = P.runParserT parser file input
     reader = runStateT state initState
+
+testParser :: Parser a -> T.Text -> IO (Either Errors a)
+testParser parser input = runParser parser "" input newParserState emptyOpts
+  where
+    emptyOpts = Options "" [] []
 
 withPos :: P.MonadParsec e s m => (Position -> m a) -> m a
 withPos f = do
@@ -114,11 +157,6 @@ lexeme = L.lexeme skipWhitespace
 
 symbol :: T.Text -> Parser T.Text
 symbol = L.symbol skipWhitespace
-
-symbol' :: T.Text -> Parser (Position, T.Text)
-symbol' x = withPos $ \pos -> do
-    symbol <- symbol x
-    return (pos, symbol)
 
 getopt :: Parser Options
 getopt = lift . lift $ ask
