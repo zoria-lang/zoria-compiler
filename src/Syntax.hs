@@ -175,11 +175,13 @@ data Type
     | NonPrimType TypeName
     -- ^ non-primitive types without parameters (e.g. Integer)
     | ParamType TypeName [Type]
-    -- ^ concrete type with parameters (e.g. 'Maybe a', '[a]', 'Array Int')
+    -- ^ concrete type with parameters (e.g. 'Maybe a', '[a]')
     | PolymorphicParamType TypeVar [Type]
     -- ^ polymorphic type with parameters (e.g. '(m a)', '(t Int)')
     | TupleType [Type]
     -- ^ tuple of types (e.g. '(Int, a, Float)')
+    | ArrayType Type
+    -- ^ array of elements of concrete type (e.g '[|Int|]', [| [|Float|] |])
   deriving Show
 
 data PrimExpr
