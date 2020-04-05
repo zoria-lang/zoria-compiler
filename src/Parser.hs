@@ -13,7 +13,7 @@ import Control.Monad.State (StateT, runStateT, get, put)
 import Control.Monad.Trans.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (void, forM)
+import Control.Monad (void, forM, when)
 import Control.Applicative ((<|>))
 import Data.Functor (($>))
 import Data.Void (Void)
@@ -81,7 +81,7 @@ program = do
 parseFile :: FilePath -> Parser (Module ())
 parseFile path = do
     file <- liftIO $ readFile path
-    protoHeader <- moduleHeader
+    protoHeader <- (moduleHeader <?> "module header")
     return undefined
 
 moduleHeader :: Parser (Module ())
@@ -90,6 +90,13 @@ moduleHeader = do
     name <- uppercaseName
     exports <- moduleIdentifierList
     return undefined
+
+keywords :: [T.Text]
+keywords = ["module", "import", "class", "instance", "let", "in", "with",
+            "match", "case", "as", "and", "or", "fn", "type", "alias",
+            "end", "if", "then", "else", "__external", "__internal",
+            "True", "False"
+            ]
 
 uppercaseName :: Parser T.Text
 uppercaseName = lexeme $ do
@@ -116,9 +123,24 @@ separatedList start end elem sep = start' *> (elements <|> pure []) <* end'
 moduleIdentifierList :: Parser (Maybe [Located ImportedValue])
 moduleIdentifierList = Just <$> list <|> pure Nothing
   where
-    list = separatedList "{" "}" exportElem ","
-    exportElem :: Parser (Located ImportedValue)
-    exportElem = undefined
+    list = separatedList "{" "}" (located exportElem) ","
+    exportElem :: Parser ImportedValue
+    exportElem = (ImportedIdentifier <$> identifier)
+             <|> (uncurry ImportedType <$> typeImport)
+    typeImport :: Parser (TypeName, [ConstructorName])
+    typeImport = do
+        tName <- typeName
+
+        return undefined
+
+typeName :: Parser TypeName
+typeName = TypeName <$> (P.string "[]" <|> uppercaseName)
+
+identifier :: Parser Identifier
+identifier = prefixOperator <|> Identifier <$> lowercaseName
+
+prefixOperator :: Parser Identifier
+prefixOperator = undefined
 
 keyword :: T.Text -> Parser ()
 keyword kw = keywordParser <?> T.unpack kw
@@ -142,13 +164,23 @@ integer :: Parser (Expr ())
 integer = withPos $ \pos -> do
     -- TODO: check for overflows
     num <- (L.signed (pure ()) parseInt)
-    return $ Primitive (IntLit num) pos ()
+    checkOverflow num
+    return $ Primitive (IntLit $ fromInteger num) pos ()
   where
-    parseInt :: Parser Int
+    parseInt :: Parser Integer
     parseInt = (P.string "0o" >> L.octal)
         <|> (P.string "0x" >> L.hexadecimal)
         <|> (P.string "0b" >> L.binary)
         <|> L.decimal
+    checkOverflow :: Integer -> Parser ()
+    checkOverflow int = do
+        when (int <  min || int > max) $
+            fail (overflowError int)
+      where
+        min = toInteger (minBound :: Int)
+        max = toInteger (maxBound :: Int)
+        overflowError int = 
+            "overflowing integer literal '" ++ show int ++ "'!\n"
 
 string :: Parser (Expr ())
 string = withPos $ \pos -> do
