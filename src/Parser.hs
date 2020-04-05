@@ -58,14 +58,14 @@ data OperatorTable = OpTable
   deriving Show
 
 -- TODO: decide what the path should be
-stdLibraryPath :: FilePath
-stdLibraryPath = undefined
+stdLibraryDir :: FilePath
+stdLibraryDir = undefined
 
 preludeName :: FilePath
 preludeName = "Core.zo"
 
 stdPreludePath :: FilePath
-stdPreludePath = stdLibraryPath </> preludeName
+stdPreludePath = stdLibraryDir </> preludeName
 
 newParserState :: ParserState
 newParserState = ParserState Map.empty Set.empty []
@@ -91,43 +91,42 @@ moduleHeader = do
     exports <- moduleIdentifierList
     return undefined
 
-keywords :: [T.Text]
-keywords = ["module", "import", "class", "instance", "let", "in", "with",
-            "match", "case", "as", "and", "or", "fn", "type", "alias",
-            "end", "if", "then", "else", "__external", "__internal"
-            ]
+reserved :: [T.Text]
+reserved = ["module", "import", "class", "instance", "let", "in", "with",
+            "match", "case", "and", "or", "fn", "type", "alias",
+            "end", "if", "then", "else", "_external", "_internal"]
 
-upperKeywords :: [T.Text]
-upperKeywords = ["True", "False"]
+upperReserved :: [T.Text]
+upperReserved = ["True", "False"]
 
-operatorKeywords :: [T.Text]
-operatorKeywords = [":", "=>", "->", "@", "=", ":="]
+reservedOperators :: [T.Text]
+reservedOperators = [":", "=>", "->", "@", "=", ":="]
 
 uppercaseName :: Parser T.Text
 uppercaseName = lexeme $ do
-    name <- T.pack <$> (pure (:) <*> P.upperChar <*> P.some nameChar)
-    when (name `elem` upperKeywords) $
+    name <- T.pack <$> (pure (:) <*> P.upperChar <*> P.many nameChar)
+    when (name `elem` upperReserved) $
         fail ("Keyword " ++ show name ++ " is not a valid identifier!")
     return name
 
 lowercaseName :: Parser T.Text 
 lowercaseName = lexeme $ do
-    name <- T.pack <$> (pure (:) <*> P.lowerChar <*> P.some nameChar)
-    when (name `elem` keywords) $
+    name <- T.pack <$> (pure (:) <*> P.lowerChar <*> P.many nameChar)
+    when (name `elem` reserved) $
         fail ("Keyword " ++ show name ++ " is not a valid identifier!")
     return name
 
 constructorOperator :: Parser T.Text
 constructorOperator = lexeme $ do
     op <- T.pack <$> (pure (:) <*> P.char ':' <*> P.some operatorChar)
-    when (op `elem` operatorKeywords) $
+    when (op `elem` reservedOperators) $
         fail ("Operator " ++ show op ++ " is a reserved operator!")
     return op
 
 operator :: Parser T.Text
 operator = lexeme $ do
     op <- T.pack <$> P.some operatorChar
-    when (op `elem` operatorKeywords) $
+    when (op `elem` reservedOperators) $
         (fail $ "Operator " ++ show op ++ " is a reserved operator!")
     return op
 
@@ -139,7 +138,7 @@ located :: Parser a -> Parser (Located a)
 located parser = withPos $ \pos -> Located pos <$> parser
 
 separatedList :: T.Text -> T.Text -> Parser a -> T.Text -> Parser [a]
-separatedList start end elem sep = start' *> (elements <|> pure []) <* end' 
+separatedList start end elem sep = start' *> (elements <|> pure []) <* end'
   where
     start' = symbol start
     end'   = symbol end
@@ -150,26 +149,29 @@ moduleIdentifierList = Just <$> list <|> pure Nothing
   where
     list = separatedList "{" "}" (located exportElem) ","
     exportElem :: Parser ImportedValue
-    exportElem = (ImportedIdentifier <$> importIdentifier)
+    exportElem = (ImportedIdentifier . Identifier <$> importIdentifier)
              <|> (uncurry ImportedType <$> typeImport)
-    typeImport :: Parser (TypeName, [ConstructorName])
-    typeImport = undefined
-    importIdentifier :: Parser Identifier
-    importIdentifier = undefined
+    importIdentifier :: Parser T.Text
+    importIdentifier = 
+        lowercaseName <|> (surroundedBy "(" operator ")") <?> "identifier"
+    typeImport :: Parser (TypeName, Maybe [ConstructorName])
+    typeImport = do
+        typeName <- TypeName <$> uppercaseName <?> "type name"
+        constructors <- (Just <$> constructorList) <|> pure Nothing
+        return (typeName, constructors)
+    constructorList :: Parser [ConstructorName]
+    constructorList = separatedList "{" "}" constructorName "," 
+        <?> "constructor list"
 
-{- ???
-typeName :: Parser TypeName
-typeName = TypeName <$> (P.string "[]" <|> uppercaseName)
+surroundedBy :: T.Text -> Parser T.Text -> T.Text -> Parser T.Text
+surroundedBy left parser right = symbol left *> parser <* symbol right
 
-identifier :: Parser Identifier
-identifier = prefixOperator <|> Identifier <$> lowercaseName
-
-prefixOperator :: Parser Identifier
-prefixOperator = symbol '(' *> operator
- -}
+constructorName :: Parser ConstructorName
+constructorName = ConstructorName <$> 
+    (uppercaseName <|> surroundedBy "(" constructorOperator ")")
 
 keyword :: T.Text -> Parser ()
-keyword kw = keywordParser <?> T.unpack kw
+keyword kw = keywordParser <?> ("keyword " ++ show kw ++ "'")
   where
     keywordParser = (lexeme . P.try) $ P.string kw *> P.notFollowedBy nameChar
 
