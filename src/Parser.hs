@@ -7,6 +7,7 @@ import qualified Data.Text.IO as T
 import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
 import qualified Text.Megaparsec.Char.Lexer as L
+import Text.Megaparsec ((<?>))
 import System.FilePath.Posix ((</>))
 import Control.Monad.State (StateT, runStateT, get, put)
 import Control.Monad.Trans.Reader (ReaderT, runReaderT, ask)
@@ -120,15 +121,17 @@ moduleIdentifierList = Just <$> list <|> pure Nothing
     exportElem = undefined
 
 keyword :: T.Text -> Parser ()
-keyword kw = (lexeme . P.try) $ P.string kw *> P.notFollowedBy nameChar
+keyword kw = keywordParser <?> T.unpack kw
+  where
+    keywordParser = (lexeme . P.try) $ P.string kw *> P.notFollowedBy nameChar
 
 primExpr :: Parser (Expr ())
-primExpr = P.try float
+primExpr = (P.try float <?> "float")
     <|> character
-    <|> integer
+    <|> (integer <?> "integer")
     <|> string
     <|> boolean
-    <|> unit
+    <|> (unit <?> "()")
 
 float :: Parser (Expr ())
 float = withPos $ \pos -> do
@@ -138,7 +141,7 @@ float = withPos $ \pos -> do
 integer :: Parser (Expr ())
 integer = withPos $ \pos -> do
     -- TODO: check for overflows
-    num <- L.signed (pure ()) parseInt
+    num <- (L.signed (pure ()) parseInt)
     return $ Primitive (IntLit num) pos ()
   where
     parseInt :: Parser Int
@@ -171,24 +174,6 @@ unit = withPos $ \pos -> do
 nameChar :: Parser Char
 nameChar = P.choice [P.alphaNumChar, P.char '\'', P.char '_']
 
-runParser :: Parser a 
-          -> FilePath
-          -> T.Text 
-          -> ParserState 
-          -> Options
-          -> IO (Either Errors a)
-runParser parser file input initState options = do
-    (result, _) <- runReaderT reader options
-    return result
-  where
-    state = P.runParserT parser file input
-    reader = runStateT state initState
-
-testParser :: Parser a -> T.Text -> IO (Either Errors a)
-testParser parser input = runParser parser "" input newParserState emptyOpts
-  where
-    emptyOpts = Options "" [] []
-
 withPos :: P.MonadParsec e s m => (Position -> m a) -> m a
 withPos f = do
     state  <- P.getParserState
@@ -210,3 +195,26 @@ symbol = L.symbol skipWhitespace
 
 getopt :: Parser Options
 getopt = lift . lift $ ask
+
+runParser :: Parser a 
+          -> FilePath
+          -> T.Text 
+          -> ParserState 
+          -> Options
+          -> IO (Either Errors a)
+runParser parser file input initState options = do
+    (result, _) <- runReaderT reader options
+    return result
+  where
+    state = P.runParserT parser file input
+    reader = runStateT state initState
+
+testParser :: Show a => Parser a -> T.Text -> IO ()
+testParser parser input = do
+    result <- parsingResult
+    case result of
+        Left err     -> putStrLn $ P.errorBundlePretty err
+        Right result -> putStrLn $ show result
+  where
+    emptyOpts = Options "" [] []
+    parsingResult = runParser parser "" input newParserState emptyOpts
