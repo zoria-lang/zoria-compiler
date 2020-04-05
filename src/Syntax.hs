@@ -3,15 +3,15 @@ module Syntax where
 import qualified Data.Text as T
 import Utility (Position)
 
-newtype Identifier = Identifier T.Text deriving (Show, Eq)
+newtype Identifier = Identifier T.Text deriving (Show, Eq, Ord)
 
-newtype TypeVar = TypeVar T.Text deriving (Show, Eq)
+newtype TypeVar = TypeVar T.Text deriving (Show, Eq, Ord)
 
-newtype ConstructorName = ConstructorName T.Text deriving (Show, Eq)
+newtype ConstructorName = ConstructorName T.Text deriving (Show, Eq, Ord)
 
-newtype TypeName = TypeName T.Text deriving (Show, Eq)
+newtype TypeName = TypeName T.Text deriving (Show, Eq, Ord)
 
-newtype ModName = ModName T.Text deriving (Show, Eq)
+newtype ModName = ModName T.Text deriving (Show, Eq, Ord)
 
 data Located a = Located
     { location  :: Position
@@ -28,7 +28,7 @@ data ModuleId = ModuleId
     { modulePrefix :: [ModName]
     , moduleName   :: ModName
     }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 
 data Module a = Module 
     { moduleId      :: ModuleId
@@ -53,7 +53,7 @@ data ImportedValue
     -- ^ imported variable (e.g. '(>>=)', 'map')
     | ImportedType TypeName (Maybe [ConstructorName])
     -- ^ type and constructor import (e.g. Maybe(Nothing), Either(), Map(..))
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 
 data TopLevelDef a
     = TopLevelLet (LetDef a)
