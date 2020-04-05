@@ -40,10 +40,11 @@ data Module a = Module
   deriving Show
 
 data Import a = Import
-    { importMod  :: Module a
-    , importName :: ModuleId
-    , importLoc  :: Position
-    , importIds  :: Maybe [Located ImportedValue]
+    { importMod   :: Module a
+    , importName  :: ModuleId
+    , importAlias :: Maybe ModName
+    , importLoc   :: Position
+    , importIds   :: Maybe [Located ImportedValue]
     }
   deriving Show
 
