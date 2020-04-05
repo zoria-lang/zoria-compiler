@@ -40,17 +40,18 @@ data Module a = Module
   deriving Show
 
 data Import a = Import
-    { importMod  :: Module a
-    , importName :: ModuleId
-    , importLoc  :: Position
-    , importIds  :: Maybe [Located ImportedValue]
+    { importMod   :: Module a
+    , importName  :: ModuleId
+    , importAlias :: Maybe ModName
+    , importLoc   :: Position
+    , importIds   :: Maybe [Located ImportedValue]
     }
   deriving Show
 
 data ImportedValue
     = ImportedIdentifier Identifier 
     -- ^ imported variable (e.g. '(>>=)', 'map')
-    | ImportedType TypeName [ConstructorName]
+    | ImportedType TypeName (Maybe [ConstructorName])
     -- ^ type and constructor import (e.g. Maybe(Nothing), Either(), Map(..))
   deriving Show
 
@@ -181,7 +182,7 @@ data Type
     | TupleType [Type]
     -- ^ tuple of types (e.g. '(Int, a, Float)')
     | ArrayType Type
-    -- ^ array of elements of concrete type (e.g '[|Int|]', [| [|Float|] |])
+    -- ^ array of elements of some type (e.g '[>Int<]', [>[>a<]<])
   deriving Show
 
 data PrimExpr
