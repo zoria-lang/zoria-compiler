@@ -9,7 +9,8 @@ import qualified Text.Megaparsec.Char as P
 import qualified Text.Megaparsec.Char.Lexer as L
 import Text.Megaparsec ((<?>))
 import System.Exit (exitFailure)
-import System.FilePath.Posix ((</>))
+import System.Directory (doesFileExist)
+import System.FilePath.Posix (takeDirectory, (</>), (<.>))
 import Control.Monad.State (StateT, runStateT, get, put)
 import Control.Monad.Trans.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.Trans.Class (lift)
@@ -18,11 +19,10 @@ import Control.Monad (void, forM, when)
 import Control.Applicative ((<|>))
 import Data.Functor (($>))
 import Data.Void (Void)
-import Utility (Position(..))
-import GetOpt (Options(..), getOptions)
-import Data.Map as Map
+import Utility (Position(..), findM)
+import GetOpt (Options(..), ModulePath(..), getOptions)
+import qualified Data.Map as Map
 import Syntax as AST
-
 
 type GetOptIO = ReaderT Options IO
 type StateIO  = StateT ParserState GetOptIO
@@ -68,10 +68,10 @@ fileExtension :: String
 fileExtension = ".zo"
 
 preludeName :: FilePath
-preludeName = "Core" ++ fileExtension
+preludeName = "Core" 
 
 stdPreludePath :: FilePath
-stdPreludePath = stdLibraryDir </> preludeName
+stdPreludePath = stdLibraryDir </> preludeName <.> fileExtension
 
 newParserState :: ParserState
 newParserState = ParserState Map.empty Map.empty []
@@ -113,16 +113,32 @@ module' path = do
   where
     importFile :: Located RawImport -> Parser (Module ())
     importFile (Located position (ModuleId prefix mod, alias, identifiers)) = do
-        -- Find out what's the path
-        -- Foo.Bar.Baz 
-        -- |______| ^___ file name
-        --  directory
         basePath <- getCurrentPath
         path <- findModulePath basePath prefix mod
         file path
 
 findModulePath :: FilePath -> [ModName] -> ModName -> Parser FilePath
-findModulePath current prefix name = undefined
+findModulePath current prefix name = do
+    externalModules <- optModules <$> getopt
+    let choices = absPath : (optModPath <$> filter matching externalModules)
+    path <- findM (liftIO . doesFileExist) choices
+    case path of
+        Nothing -> fail $ "Cannot find module " ++ show (unwrapName name)
+        Just path -> return path
+  where
+    absPath = current' </> relativePath
+    current' = takeDirectory current
+    relativePath = foldPath prefix name
+    foldPath :: [ModName] -> ModName -> FilePath
+    foldPath prefix (ModName name) = 
+        foldl joinPath "" prefix </> (T.unpack name) <.> fileExtension
+      where
+        joinPath path (ModName dir) = path </> (T.unpack dir)
+    matching :: ModulePath -> Bool
+    matching mod
+        | null prefix = optModName mod == unwrapName name
+        | otherwise   = optModName mod == unwrapName (head prefix)
+    unwrapName (ModName name) = name
 
 import' :: Parser RawImport
 import' = do
