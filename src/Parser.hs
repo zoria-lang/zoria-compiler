@@ -79,21 +79,32 @@ program = do
     return $ Program rootModule
 
 moduleParser :: FilePath -> Parser (Module ())
-moduleParser path = do
+moduleParser path = withFreshState $ do
     -- opening a file doesn't do anything. We need to swap the inputs somehow.
-    file <- liftIO $ readFile path
-    state <- stashState
+    fileContents <- liftIO $ T.readFile path
+    setFreshState path fileContents
     protoHeader <- (moduleHeader <?> "module header")
     -- parse the imports
-    restoreState state
     -- parse the file
     return undefined
+  where
+    setFreshState :: FilePath -> T.Text -> Parser ()
+    setFreshState path input = do
+        state <- P.getParserState
+        let sourcePos   = P.SourcePos path (P.mkPos 1) (P.mkPos 1)
+            oldPosState = P.statePosState state
+            tabWidth    = P.pstateTabWidth oldPosState
+            linePrefix  = P.pstateLinePrefix oldPosState
+            errors      = P.stateParseErrors state
+            posState    = P.PosState input 0 sourcePos tabWidth linePrefix
+        P.setParserState (P.State input 0 posState errors)
 
-stashState :: Parser (P.State T.Text Errors)
-stashState = undefined
-
-restoreState :: (P.State T.Text Errors) -> Parser ()
-restoreState = undefined
+withFreshState :: Parser a -> Parser a
+withFreshState parser = do
+    oldState <- P.getParserState
+    parsingResult <- parser
+    P.setParserState oldState
+    return parsingResult
 
 moduleHeader :: Parser (Module ())
 moduleHeader = do
@@ -187,12 +198,21 @@ keyword kw = keywordParser <?> ("keyword " ++ show kw ++ "'")
     keywordParser = (lexeme . P.try) $ P.string kw *> P.notFollowedBy nameChar
 
 primExpr :: Parser (Expr ())
-primExpr = (P.try float <?> "float")
+primExpr = (P.try float <?> "float literal")
     <|> character
-    <|> (integer <?> "integer")
+    <|> (integer <?> "integer literal")
     <|> string
-    <|> boolean
+    <|> (P.try boolean <?> "bool literal")
+    <|> (P.try variable <?> "identifier")
     <|> (unit <?> "()")
+
+variable :: Parser (Expr ())
+variable = withPos $ \pos -> do
+    var <- lowercaseName 
+        <|> surroundedBy "(" operator ")"
+        <|> uppercaseName
+        <|> surroundedBy "(" constructorOperator ")"
+    return $ Var (Identifier var) pos ()
 
 float :: Parser (Expr ())
 float = withPos $ \pos -> do
