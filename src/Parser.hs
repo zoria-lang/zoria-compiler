@@ -75,14 +75,25 @@ program = do
     -- at the moment the rest of the input files is discarded
     -- TODO: assure that there can be only one input file specified
     rootFile <- head . optInputs <$> getopt
-    rootModule <- parseFile rootFile
+    rootModule <- moduleParser rootFile
     return $ Program rootModule
 
-parseFile :: FilePath -> Parser (Module ())
-parseFile path = do
+moduleParser :: FilePath -> Parser (Module ())
+moduleParser path = do
+    -- opening a file doesn't do anything. We need to swap the inputs somehow.
     file <- liftIO $ readFile path
+    state <- stashState
     protoHeader <- (moduleHeader <?> "module header")
+    -- parse the imports
+    restoreState state
+    -- parse the file
     return undefined
+
+stashState :: Parser (P.State T.Text Errors)
+stashState = undefined
+
+restoreState :: (P.State T.Text Errors) -> Parser ()
+restoreState = undefined
 
 moduleHeader :: Parser (Module ())
 moduleHeader = do
@@ -131,8 +142,8 @@ operator = lexeme $ do
     return op
 
 operatorChar :: Parser Char
-operatorChar = P.oneOf 
-    ['=', '+', '-', '*', '.', '/', '!', '~', '$', '%', '&', '?', '>', '<', ':']
+operatorChar = P.oneOf ['=', '+', '-', '*', '.', '/', '!', '~', 
+                        '$', '%', '&', '?', '>', '<', ':', '@']
 
 located :: Parser a -> Parser (Located a)
 located parser = withPos $ \pos -> Located pos <$> parser
@@ -145,7 +156,7 @@ separatedList start end elem sep = start' *> (elements <|> pure []) <* end'
     elements = pure (:) <*> elem <*> P.many (symbol sep *> elem)
 
 moduleIdentifierList :: Parser (Maybe [Located ImportedValue])
-moduleIdentifierList = Just <$> list <|> pure Nothing
+moduleIdentifierList = P.optional list
   where
     list = separatedList "{" "}" (located exportElem) ","
     exportElem :: Parser ImportedValue
@@ -157,7 +168,7 @@ moduleIdentifierList = Just <$> list <|> pure Nothing
     typeImport :: Parser (TypeName, Maybe [ConstructorName])
     typeImport = do
         typeName <- TypeName <$> uppercaseName <?> "type name"
-        constructors <- (Just <$> constructorList) <|> pure Nothing
+        constructors <- P.optional constructorList
         return (typeName, constructors)
     constructorList :: Parser [ConstructorName]
     constructorList = separatedList "{" "}" constructorName "," 
@@ -206,7 +217,7 @@ integer = withPos $ \pos -> do
         min = toInteger (minBound :: Int)
         max = toInteger (maxBound :: Int)
         overflowError int = 
-            "overflowing integer literal '" ++ show int ++ "'!\n"
+            "overflowing integer literal '" ++ show int ++ "'"
 
 string :: Parser (Expr ())
 string = withPos $ \pos -> do
