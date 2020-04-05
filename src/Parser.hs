@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Parser (Parser, runParser, newParserState) where
+module Parser (Parser, runParser, newParserState, program) where
 
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -8,6 +8,7 @@ import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
 import qualified Text.Megaparsec.Char.Lexer as L
 import Text.Megaparsec ((<?>))
+import System.Exit (exitFailure)
 import System.FilePath.Posix ((</>))
 import Control.Monad.State (StateT, runStateT, get, put)
 import Control.Monad.Trans.Reader (ReaderT, runReaderT, ask)
@@ -72,39 +73,24 @@ newParserState = ParserState Map.empty Set.empty []
 
 program :: Parser (AST.Program ())
 program = do
-    -- at the moment the rest of the input files is discarded
-    -- TODO: assure that there can be only one input file specified
+    opts <- show <$> getopt
+    liftIO $ putStrLn opts
     rootFile <- head . optInputs <$> getopt
-    rootModule <- moduleParser rootFile
-    return $ Program rootModule
+    Program <$> file rootFile
 
-moduleParser :: FilePath -> Parser (Module ())
-moduleParser path = withFreshState $ do
-    -- opening a file doesn't do anything. We need to swap the inputs somehow.
-    fileContents <- liftIO $ T.readFile path
-    setFreshState path fileContents
-    protoHeader <- (moduleHeader <?> "module header")
-    -- parse the imports
-    -- parse the file
+file :: FilePath -> Parser (Module ())
+file path = do
+    fileContents <- liftIO . T.readFile $ path
+    result <- lift $ P.runParserT module' path fileContents
+    case result of
+        Right mod -> return mod
+        Left err  -> liftIO $ putStrLn (P.errorBundlePretty err) >> exitFailure
+
+module' :: Parser (Module())
+module' = do
+    skipWhitespace
+    header <- moduleHeader
     return undefined
-  where
-    setFreshState :: FilePath -> T.Text -> Parser ()
-    setFreshState path input = do
-        state <- P.getParserState
-        let sourcePos   = P.SourcePos path (P.mkPos 1) (P.mkPos 1)
-            oldPosState = P.statePosState state
-            tabWidth    = P.pstateTabWidth oldPosState
-            linePrefix  = P.pstateLinePrefix oldPosState
-            errors      = P.stateParseErrors state
-            posState    = P.PosState input 0 sourcePos tabWidth linePrefix
-        P.setParserState (P.State input 0 posState errors)
-
-withFreshState :: Parser a -> Parser a
-withFreshState parser = do
-    oldState <- P.getParserState
-    parsingResult <- parser
-    P.setParserState oldState
-    return parsingResult
 
 moduleHeader :: Parser (Module ())
 moduleHeader = do
@@ -193,7 +179,7 @@ constructorName = ConstructorName <$>
     (uppercaseName <|> surroundedBy "(" constructorOperator ")")
 
 keyword :: T.Text -> Parser ()
-keyword kw = keywordParser <?> ("keyword " ++ show kw ++ "'")
+keyword kw = keywordParser <?> ("keyword " ++ show kw)
   where
     keywordParser = (lexeme . P.try) $ P.string kw *> P.notFollowedBy nameChar
 
