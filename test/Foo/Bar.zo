@@ -1,3 +1,11 @@
 module Bar {bar}
 
 let bar x := x
+
+#:
+
+    #:
+        #:
+            NESTED MULTILINE COMMENT :#
+    :#
+:#

@@ -1,8 +1,8 @@
 module Utility where
 
-
 import Control.Monad (forM)
 import Data.List (find)
+
 
 data Position = Position
     { posOffset :: !Int

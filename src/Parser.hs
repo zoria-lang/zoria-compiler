@@ -26,7 +26,7 @@ import Syntax as AST
 
 type GetOptIO = ReaderT Options IO
 type StateIO  = StateT ParserState GetOptIO
-type Parser   = P.ParsecT Void T.Text StateIO
+type ParserIO = P.ParsecT Void T.Text StateIO
 
 type Errors   = P.ParseErrorBundle T.Text Void
 
@@ -76,14 +76,14 @@ stdPreludePath = stdLibraryDir </> preludeName <.> fileExtension
 newParserState :: ParserState
 newParserState = ParserState Map.empty Map.empty []
 
-program :: Parser (AST.Program ())
+program :: ParserIO (AST.Program ())
 program = do
     opts <- show <$> getopt
     -- TODO: import prelude
     rootFile <- head . optInputs <$> getopt
     Program <$> file rootFile
 
-file :: FilePath -> Parser (Module ())
+file :: FilePath -> ParserIO (Module ())
 file path = do
     visited <- stateVisited <$> lift get
     case Map.lookup path visited of
@@ -93,31 +93,38 @@ file path = do
             handleError result
         Just mod -> return mod
   where
-    handleError :: Either Errors (Module ()) -> Parser (Module ())
+    handleError :: Either Errors (Module ()) -> ParserIO (Module ())
     handleError (Right mod) = return mod
     handleError (Left err) = 
         liftIO $ putStrLn (P.errorBundlePretty err) >> exitFailure
 
-module' :: FilePath -> Parser (Module())
+module' :: FilePath -> ParserIO (Module())
 module' path = do
     skipWhitespace
     (name, exports) <- moduleHeader <?> "module header"
     pushModulePath name path
     rawImports <- P.many $ located (import' <?> "module import")
-    -- load imported modules
     imports <- forM rawImports importFile
-    -- parse the actual program
+    definitions <- P.many $ topLevelDef
     P.eof
-    -- create the Module object
-    return undefined
+    return $ Module (ModuleId [] name) path imports exports definitions
   where
-    importFile :: Located RawImport -> Parser (Module ())
-    importFile (Located position (ModuleId prefix mod, alias, identifiers)) = do
+    importFile :: Located RawImport -> ParserIO (Import ())
+    importFile (Located position (id, alias, identifiers)) = do
+        let ModuleId prefix mod = id
         basePath <- getCurrentPath
         path <- findModulePath basePath prefix mod
-        file path
+        mod <- file path
+        checkModuleName $ AST.moduleName . moduleId $ mod
+        return $ Import mod id alias position identifiers
+      where
+        checkModuleName :: ModName -> ParserIO ()
+        checkModuleName name
+            | AST.moduleName id /= name = fail $ 
+                "Module name " ++ show name ++ " doesn't match the file name!"
+            | otherwise = return ()
 
-findModulePath :: FilePath -> [ModName] -> ModName -> Parser FilePath
+findModulePath :: FilePath -> [ModName] -> ModName -> ParserIO FilePath
 findModulePath current prefix name = do
     externalModules <- optModules <$> getopt
     let choices = absPath : (optModPath <$> filter matching externalModules)
@@ -140,7 +147,7 @@ findModulePath current prefix name = do
         | otherwise   = optModName mod == unwrapName (head prefix)
     unwrapName (ModName name) = name
 
-import' :: Parser RawImport
+import' :: ParserIO RawImport
 import' = do
     keyword "import"
     name <- qualifiedModuleName <?> "module name"
@@ -148,12 +155,12 @@ import' = do
     alias <- P.optional $ keyword "as" *> (uppercaseName <?> "name alias")
     return (name, ModName <$> alias, list)
 
-getCurrentPath :: Parser FilePath
+getCurrentPath :: ParserIO FilePath
 getCurrentPath = do
     state <- lift get
     return $ snd . head . stateModuleStack $ state
 
-qualifiedModuleName :: Parser ModuleId
+qualifiedModuleName :: ParserIO ModuleId
 qualifiedModuleName = do
     prefix <- P.many $ P.try $ (uppercaseName) <* sep
     name   <- uppercaseName
@@ -161,17 +168,20 @@ qualifiedModuleName = do
   where
     sep = P.char '\\' <?> "scope operator \"\\\""
 
-moduleHeader :: Parser (ModName, Maybe [Located ImportedValue])
+moduleHeader :: ParserIO (ModName, Maybe [Located ImportedValue])
 moduleHeader = do
     keyword "module"
     name <- uppercaseName <?> "module name"
     exports <- moduleIdentifierList
     return (ModName name, exports)
 
-pushModulePath :: ModName -> FilePath -> Parser ()
+pushModulePath :: ModName -> FilePath -> ParserIO ()
 pushModulePath name path = do
     state <- lift get
     lift $ put state { stateModuleStack = (name, path) : stateModuleStack state}
+
+topLevelDef :: ParserIO (TopLevelDef a)
+topLevelDef = undefined
 
 reserved :: [T.Text]
 reserved = ["module", "import", "class", "instance", "let", "in", "with",
@@ -184,80 +194,80 @@ upperReserved = ["True", "False"]
 reservedOperators :: [T.Text]
 reservedOperators = [":", "=>", "->", "@", "=", ":="]
 
-uppercaseName :: Parser T.Text
+uppercaseName :: ParserIO T.Text
 uppercaseName = lexeme $ do
     name <- T.pack <$> (pure (:) <*> P.upperChar <*> P.many nameChar)
     when (name `elem` upperReserved) $
         fail ("Keyword " ++ show name ++ " is not a valid identifier!")
     return name
 
-lowercaseName :: Parser T.Text 
+lowercaseName :: ParserIO T.Text 
 lowercaseName = lexeme $ do
     name <- T.pack <$> (pure (:) <*> P.lowerChar <*> P.many nameChar)
     when (name `elem` reserved) $
         fail ("Keyword " ++ show name ++ " is not a valid identifier!")
     return name
 
-constructorOperator :: Parser T.Text
+constructorOperator :: ParserIO T.Text
 constructorOperator = lexeme $ do
     op <- T.pack <$> (pure (:) <*> P.char ':' <*> P.some operatorChar)
     when (op `elem` reservedOperators) $
         fail ("Operator " ++ show op ++ " is a reserved operator!")
     return op
 
-operator :: Parser T.Text
+operator :: ParserIO T.Text
 operator = lexeme $ do
     op <- T.pack <$> P.some operatorChar
     when (op `elem` reservedOperators) $
         (fail $ "Operator " ++ show op ++ " is a reserved operator!")
     return op
 
-operatorChar :: Parser Char
-operatorChar = P.oneOf ['=', '+', '-', '*', '.', '/', '!', '~', 
-                        '$', '%', '&', '?', '>', '<', ':', '@']
+operatorChar :: ParserIO Char
+operatorChar = P.oneOf ['=', '+', '-', '*', '.', '/', '!', '~', '^',
+                        '$', '%', '&', '?', '>', '<', ':', '@', '|']
 
-located :: Parser a -> Parser (Located a)
+located :: ParserIO a -> ParserIO (Located a)
 located parser = withPos $ \pos -> Located pos <$> parser
 
-separatedList :: T.Text -> T.Text -> Parser a -> T.Text -> Parser [a]
+separatedList :: T.Text -> T.Text -> ParserIO a -> T.Text -> ParserIO [a]
 separatedList start end elem sep = start' *> (elements <|> pure []) <* end'
   where
     start' = symbol start
     end'   = symbol end
     elements = pure (:) <*> elem <*> P.many (symbol sep *> elem)
 
-moduleIdentifierList :: Parser (Maybe [Located ImportedValue])
+moduleIdentifierList :: ParserIO (Maybe [Located ImportedValue])
 moduleIdentifierList = P.optional list
   where
     list = separatedList "{" "}" (located exportElem) ","
-    exportElem :: Parser ImportedValue
+    exportElem :: ParserIO ImportedValue
     exportElem = (ImportedIdentifier . Identifier <$> importIdentifier)
              <|> (uncurry ImportedType <$> typeImport)
-    importIdentifier :: Parser T.Text
+    importIdentifier :: ParserIO T.Text
     importIdentifier = 
         lowercaseName <|> (surroundedBy "(" operator ")") <?> "identifier"
-    typeImport :: Parser (TypeName, Maybe [ConstructorName])
+    typeImport :: ParserIO (TypeName, Maybe [ConstructorName])
     typeImport = do
         typeName <- TypeName <$> uppercaseName <?> "type name"
         constructors <- P.optional constructorList
         return (typeName, constructors)
-    constructorList :: Parser [ConstructorName]
+    constructorList :: ParserIO [ConstructorName]
     constructorList = separatedList "{" "}" constructorName "," 
         <?> "constructor list"
 
-surroundedBy :: T.Text -> Parser T.Text -> T.Text -> Parser T.Text
+surroundedBy :: T.Text -> ParserIO T.Text -> T.Text -> ParserIO T.Text
 surroundedBy left parser right = symbol left *> parser <* symbol right
 
-constructorName :: Parser ConstructorName
+constructorName :: ParserIO ConstructorName
 constructorName = ConstructorName <$> 
     (uppercaseName <|> surroundedBy "(" constructorOperator ")")
 
-keyword :: T.Text -> Parser ()
-keyword kw = keywordParser <?> ("keyword " ++ show kw)
+keyword :: T.Text -> ParserIO ()
+keyword kw = keywordParserIO <?> ("keyword " ++ show kw)
   where
-    keywordParser = (lexeme . P.try) $ P.string kw *> P.notFollowedBy nameChar
+    keywordParserIO = (lexeme . P.try) $ P.string kw *> P.notFollowedBy nameChar
 
-primExpr :: Parser (Expr ())
+primExpr :: ParserIO (Expr ())
 primExpr = (P.try float <?> "float literal")
     <|> character
     <|> (integer <?> "integer literal")
@@ -266,7 +276,7 @@ primExpr = (P.try float <?> "float literal")
     <|> (variable <?> "identifier")
     <|> (unit <?> "()")
 
-variable :: Parser (Expr ())
+variable :: ParserIO (Expr ())
 variable = withPos $ \pos -> do
     var <- lowercaseName 
         <|> surroundedBy "(" operator ")"
@@ -274,24 +284,24 @@ variable = withPos $ \pos -> do
         <|> surroundedBy "(" constructorOperator ")"
     return $ Var (Identifier var) pos ()
 
-float :: Parser (Expr ())
+float :: ParserIO (Expr ())
 float = withPos $ \pos -> do
     num <- L.signed (pure ()) L.float
     return $ Primitive (FloatLit num) pos ()
 
-integer :: Parser (Expr ())
+integer :: ParserIO (Expr ())
 integer = withPos $ \pos -> do
     -- TODO: check for overflows
     num <- (L.signed (pure ()) parseInt)
     checkOverflow num
     return $ Primitive (IntLit $ fromInteger num) pos ()
   where
-    parseInt :: Parser Integer
+    parseInt :: ParserIO Integer
     parseInt = (P.string "0o" >> L.octal)
         <|> (P.string "0x" >> L.hexadecimal)
         <|> (P.string "0b" >> L.binary)
         <|> L.decimal
-    checkOverflow :: Integer -> Parser ()
+    checkOverflow :: Integer -> ParserIO ()
     checkOverflow i = when (i <  min || i > max) $ fail (overflowError i)
       where
         min = toInteger (minBound :: Int)
@@ -299,28 +309,28 @@ integer = withPos $ \pos -> do
         overflowError int = 
             "overflowing integer literal '" ++ show int ++ "'"
 
-string :: Parser (Expr ())
+string :: ParserIO (Expr ())
 string = withPos $ \pos -> do
     str <- P.char '"' *> (T.pack <$> P.manyTill L.charLiteral (P.char '"'))
     return $ Primitive (StringLit str) pos ()
 
-character :: Parser (Expr ())
+character :: ParserIO (Expr ())
 character = withPos $ \pos -> do
     c <- P.char '\'' *> L.charLiteral <* P.char '\''
     return $ Primitive (CharLit c) pos ()
 
-boolean :: Parser (Expr ())
+boolean :: ParserIO (Expr ())
 boolean = withPos $ \pos -> do
     val <- (keyword "True" $> True) <|> (keyword "False" $> False)
     return $ Primitive (BoolLit val) pos ()
 
-unit :: Parser (Expr ())
+unit :: ParserIO (Expr ())
 unit = withPos $ \pos -> do
     symbol "("
     symbol ")"
     return $ Primitive UnitLit pos ()
 
-nameChar :: Parser Char
+nameChar :: ParserIO Char
 nameChar = P.choice [P.alphaNumChar, P.char '\'', P.char '_']
 
 withPos :: P.MonadParsec e s m => (Position -> m a) -> m a
@@ -330,24 +340,24 @@ withPos f = do
     let file = P.sourceName . P.pstateSourcePos . P.statePosState $ state
     f $ Position offset file 
 
-skipWhitespace :: Parser ()
+skipWhitespace :: ParserIO ()
 skipWhitespace = L.space (void P.spaceChar) lineComment blockComment
   where
     lineComment  = P.try (P.char '#' *> P.notFollowedBy ":") >> skipLine
     blockComment = L.skipBlockCommentNested "#:" ":#"
-    skipLine :: Parser ()
+    skipLine :: ParserIO ()
     skipLine = void $ P.takeWhileP (Just "character") (/= '\n')
 
-lexeme :: Parser a -> Parser a
+lexeme :: ParserIO a -> ParserIO a
 lexeme = L.lexeme skipWhitespace
 
-symbol :: T.Text -> Parser T.Text
+symbol :: T.Text -> ParserIO T.Text
 symbol = L.symbol skipWhitespace
 
-getopt :: Parser Options
+getopt :: ParserIO Options
 getopt = lift . lift $ ask
 
-runParser :: Parser a 
+runParser :: ParserIO a 
           -> FilePath
           -> T.Text 
           -> ParserState 
@@ -370,7 +380,7 @@ parseProgram = do
             exitFailure
         Right program -> return program
 
-testParser :: Show a => Parser a -> T.Text -> IO ()
+testParser :: Show a => ParserIO a -> T.Text -> IO ()
 testParser parser input = do
     result <- parsingResult
     case result of
