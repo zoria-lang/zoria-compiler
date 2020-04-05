@@ -1,0 +1,3 @@
+module Bar {bar}
+
+let bar x := x

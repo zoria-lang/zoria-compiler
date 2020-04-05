@@ -1,0 +1,18 @@
+
+#:
+    multiline comment
+:#
+
+#module Commented {comment}
+
+module Main {main}
+
+import Foo
+import Foo\Bar {bar}
+
+let main _ := {
+    let name := readLine ();
+    foo 10;
+    bar 20;
+    puts name;
+}

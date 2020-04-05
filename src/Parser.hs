@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Parser (Parser, runParser, newParserState, program) where
+module Parser (parseProgram) where
 
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -19,7 +19,7 @@ import Control.Applicative ((<|>))
 import Data.Functor (($>))
 import Data.Void (Void)
 import Utility (Position(..))
-import GetOpt (Options(..))
+import GetOpt (Options(..), getOptions)
 import Data.Map as Map
 import Syntax as AST
 
@@ -57,12 +57,18 @@ data OperatorTable = OpTable
     }
   deriving Show
 
+type RawImport = (ModuleId, Maybe ModName, Maybe [Located ImportedValue])
+
+
 -- TODO: decide what the path should be
 stdLibraryDir :: FilePath
 stdLibraryDir = undefined
 
+fileExtension :: String
+fileExtension = ".zo"
+
 preludeName :: FilePath
-preludeName = "Core.zo"
+preludeName = "Core" ++ fileExtension
 
 stdPreludePath :: FilePath
 stdPreludePath = stdLibraryDir </> preludeName
@@ -73,7 +79,7 @@ newParserState = ParserState Map.empty Map.empty []
 program :: Parser (AST.Program ())
 program = do
     opts <- show <$> getopt
-    liftIO $ putStrLn opts
+    -- TODO: import prelude
     rootFile <- head . optInputs <$> getopt
     Program <$> file rootFile
 
@@ -97,7 +103,47 @@ module' path = do
     skipWhitespace
     (name, exports) <- moduleHeader <?> "module header"
     pushModulePath name path
+    rawImports <- P.many $ located (import' <?> "module import")
+    -- load imported modules
+    imports <- forM rawImports importFile
+    -- parse the actual program
+    P.eof
+    -- create the Module object
     return undefined
+  where
+    importFile :: Located RawImport -> Parser (Module ())
+    importFile (Located position (ModuleId prefix mod, alias, identifiers)) = do
+        -- Find out what's the path
+        -- Foo.Bar.Baz 
+        -- |______| ^___ file name
+        --  directory
+        basePath <- getCurrentPath
+        path <- findModulePath basePath prefix mod
+        file path
+
+findModulePath :: FilePath -> [ModName] -> ModName -> Parser FilePath
+findModulePath current prefix name = undefined
+
+import' :: Parser RawImport
+import' = do
+    keyword "import"
+    name <- qualifiedModuleName <?> "module name"
+    list <- moduleIdentifierList
+    alias <- P.optional $ keyword "as" *> (uppercaseName <?> "name alias")
+    return (name, ModName <$> alias, list)
+
+getCurrentPath :: Parser FilePath
+getCurrentPath = do
+    state <- lift get
+    return $ snd . head . stateModuleStack $ state
+
+qualifiedModuleName :: Parser ModuleId
+qualifiedModuleName = do
+    prefix <- P.many $ P.try $ (uppercaseName) <* sep
+    name   <- uppercaseName
+    return $ ModuleId (ModName <$> prefix) (ModName name) 
+  where
+    sep = P.char '\\' <?> "scope operator \"\\\""
 
 moduleHeader :: Parser (ModName, Maybe [Located ImportedValue])
 moduleHeader = do
@@ -201,7 +247,7 @@ primExpr = (P.try float <?> "float literal")
     <|> (integer <?> "integer literal")
     <|> string
     <|> (P.try boolean <?> "bool literal")
-    <|> (P.try variable <?> "identifier")
+    <|> (variable <?> "identifier")
     <|> (unit <?> "()")
 
 variable :: Parser (Expr ())
@@ -297,6 +343,16 @@ runParser parser file input initState options = do
   where
     state = P.runParserT parser file input
     reader = runStateT state initState
+
+parseProgram :: IO (Program ())
+parseProgram = do
+    opts <- getOptions
+    result <- runParser program "" "" newParserState opts
+    case result of
+        Left err  -> do 
+            putStrLn $ P.errorBundlePretty err
+            exitFailure
+        Right program -> return program
 
 testParser :: Show a => Parser a -> T.Text -> IO ()
 testParser parser input = do

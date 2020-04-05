@@ -1,0 +1,3 @@
+module Foo {foo}
+
+let foo x := x
