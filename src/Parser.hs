@@ -94,21 +94,46 @@ moduleHeader = do
 keywords :: [T.Text]
 keywords = ["module", "import", "class", "instance", "let", "in", "with",
             "match", "case", "as", "and", "or", "fn", "type", "alias",
-            "end", "if", "then", "else", "__external", "__internal",
-            "True", "False"
+            "end", "if", "then", "else", "__external", "__internal"
             ]
+
+upperKeywords :: [T.Text]
+upperKeywords = ["True", "False"]
+
+operatorKeywords :: [T.Text]
+operatorKeywords = [":", "=>", "->", "@", "=", ":="]
 
 uppercaseName :: Parser T.Text
 uppercaseName = lexeme $ do
-    first <- P.upperChar
-    rest  <- P.some nameChar
-    return . T.pack $ first : rest
+    name <- T.pack <$> (pure (:) <*> P.upperChar <*> P.some nameChar)
+    when (name `elem` upperKeywords) $
+        fail ("Keyword " ++ show name ++ " is not a valid identifier!")
+    return name
 
 lowercaseName :: Parser T.Text 
 lowercaseName = lexeme $ do
-    first <- P.lowerChar
-    rest  <- P.some nameChar
-    return . T.pack $ first : rest
+    name <- T.pack <$> (pure (:) <*> P.lowerChar <*> P.some nameChar)
+    when (name `elem` keywords) $
+        fail ("Keyword " ++ show name ++ " is not a valid identifier!")
+    return name
+
+constructorOperator :: Parser T.Text
+constructorOperator = lexeme $ do
+    op <- T.pack <$> (pure (:) <*> P.char ':' <*> P.some operatorChar)
+    when (op `elem` operatorKeywords) $
+        fail ("Operator " ++ show op ++ " is a reserved operator!")
+    return op
+
+operator :: Parser T.Text
+operator = lexeme $ do
+    op <- T.pack <$> P.some operatorChar
+    when (op `elem` operatorKeywords) $
+        (fail $ "Operator " ++ show op ++ " is a reserved operator!")
+    return op
+
+operatorChar :: Parser Char
+operatorChar = P.oneOf 
+    ['=', '+', '-', '*', '.', '/', '!', '~', '$', '%', '&', '?', '>', '<', ':']
 
 located :: Parser a -> Parser (Located a)
 located parser = withPos $ \pos -> Located pos <$> parser
@@ -125,14 +150,14 @@ moduleIdentifierList = Just <$> list <|> pure Nothing
   where
     list = separatedList "{" "}" (located exportElem) ","
     exportElem :: Parser ImportedValue
-    exportElem = (ImportedIdentifier <$> identifier)
+    exportElem = (ImportedIdentifier <$> importIdentifier)
              <|> (uncurry ImportedType <$> typeImport)
     typeImport :: Parser (TypeName, [ConstructorName])
-    typeImport = do
-        tName <- typeName
+    typeImport = undefined
+    importIdentifier :: Parser Identifier
+    importIdentifier = undefined
 
-        return undefined
-
+{- ???
 typeName :: Parser TypeName
 typeName = TypeName <$> (P.string "[]" <|> uppercaseName)
 
@@ -140,7 +165,8 @@ identifier :: Parser Identifier
 identifier = prefixOperator <|> Identifier <$> lowercaseName
 
 prefixOperator :: Parser Identifier
-prefixOperator = undefined
+prefixOperator = symbol '(' *> operator
+ -}
 
 keyword :: T.Text -> Parser ()
 keyword kw = keywordParser <?> T.unpack kw
@@ -173,9 +199,7 @@ integer = withPos $ \pos -> do
         <|> (P.string "0b" >> L.binary)
         <|> L.decimal
     checkOverflow :: Integer -> Parser ()
-    checkOverflow int = do
-        when (int <  min || int > max) $
-            fail (overflowError int)
+    checkOverflow i = when (i <  min || i > max) $ fail (overflowError i)
       where
         min = toInteger (minBound :: Int)
         max = toInteger (maxBound :: Int)
