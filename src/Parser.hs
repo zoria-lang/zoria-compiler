@@ -21,7 +21,6 @@ import Data.Void (Void)
 import Utility (Position(..))
 import GetOpt (Options(..))
 import Data.Map as Map
-import Data.Set as Set
 import Syntax as AST
 
 
@@ -32,9 +31,9 @@ type Parser   = P.ParsecT Void T.Text StateIO
 type Errors   = P.ParseErrorBundle T.Text Void
 
 data ParserState = ParserState
-    { stateOperators :: Map.Map Priority OperatorTable
-    , stateVisited   :: Set.Set ModuleId
-    , stateModule    :: [ModuleHeader]
+    { stateOperators   :: Map.Map Priority OperatorTable
+    , stateVisited     :: Map.Map FilePath (Module ())
+    , stateModuleStack :: [(ModName, FilePath)]
     }
   deriving Show
 
@@ -69,7 +68,7 @@ stdPreludePath :: FilePath
 stdPreludePath = stdLibraryDir </> preludeName
 
 newParserState :: ParserState
-newParserState = ParserState Map.empty Set.empty []
+newParserState = ParserState Map.empty Map.empty []
 
 program :: Parser (AST.Program ())
 program = do
@@ -80,24 +79,37 @@ program = do
 
 file :: FilePath -> Parser (Module ())
 file path = do
-    fileContents <- liftIO . T.readFile $ path
-    result <- lift $ P.runParserT module' path fileContents
-    case result of
-        Right mod -> return mod
-        Left err  -> liftIO $ putStrLn (P.errorBundlePretty err) >> exitFailure
+    visited <- stateVisited <$> lift get
+    case Map.lookup path visited of
+        Nothing -> do
+            fileContents <- liftIO . T.readFile $ path
+            result <- lift $ P.runParserT (module' path) path fileContents
+            handleError result
+        Just mod -> return mod
+  where
+    handleError :: Either Errors (Module ()) -> Parser (Module ())
+    handleError (Right mod) = return mod
+    handleError (Left err) = 
+        liftIO $ putStrLn (P.errorBundlePretty err) >> exitFailure
 
-module' :: Parser (Module())
-module' = do
+module' :: FilePath -> Parser (Module())
+module' path = do
     skipWhitespace
-    header <- moduleHeader
+    (name, exports) <- moduleHeader <?> "module header"
+    pushModulePath name path
     return undefined
 
-moduleHeader :: Parser (Module ())
+moduleHeader :: Parser (ModName, Maybe [Located ImportedValue])
 moduleHeader = do
     keyword "module"
-    name <- uppercaseName
+    name <- uppercaseName <?> "module name"
     exports <- moduleIdentifierList
-    return undefined
+    return (ModName name, exports)
+
+pushModulePath :: ModName -> FilePath -> Parser ()
+pushModulePath name path = do
+    state <- lift get
+    lift $ put state { stateModuleStack = (name, path) : stateModuleStack state}
 
 reserved :: [T.Text]
 reserved = ["module", "import", "class", "instance", "let", "in", "with",
@@ -259,8 +271,10 @@ withPos f = do
 skipWhitespace :: Parser ()
 skipWhitespace = L.space (void P.spaceChar) lineComment blockComment
   where
-    lineComment  = L.skipLineComment "#"
-    blockComment = L.skipBlockComment "#:" ":#"
+    lineComment  = P.try (P.char '#' *> P.notFollowedBy ":") >> skipLine
+    blockComment = L.skipBlockCommentNested "#:" ":#"
+    skipLine :: Parser ()
+    skipLine = void $ P.takeWhileP (Just "character") (/= '\n')
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme skipWhitespace
