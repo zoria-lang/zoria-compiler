@@ -109,7 +109,7 @@ data Constraint = Constraint
     { constraintName  :: TypeName
     , constraintParam :: TypeVar
     }
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data Instance a = Instance
     { instanceClass   :: TypeName
@@ -131,7 +131,7 @@ data TypeSig = TypeSig
     { typeSigConstraints :: [Constraint]
     , typeSig            :: Type
     }
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data PrimType
     = IntT
@@ -141,23 +141,23 @@ data PrimType
     | BoolT
     | UnitT
     | CPtrT
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data TypeCase
     = TypeCaseRecord ConstructorName RecordType Position
     -- ^ constructor of a record
     | TypeCase ConstructorName [TypeSig] Position
     -- ^ normal constructor (e.g. 'Just a')
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 
-newtype RecordType = RecordType [RecordField] deriving Show
+newtype RecordType = RecordType [RecordField] deriving (Show, Eq, Ord)
 
 data RecordField = RecordField
     { recordFieldName :: Identifier
     , recordFieldType :: TypeSig
     }
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data KindSig
     = TypeKind
@@ -183,7 +183,7 @@ data Type
     -- ^ tuple of types (e.g. '(Int, a, Float)')
     | ArrayType Type
     -- ^ array of elements of some type (e.g '[>Int<]', [>[>a<]<])
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data PrimExpr
     = IntLit Int

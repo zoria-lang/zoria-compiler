@@ -5,4 +5,4 @@ data Position = Position
     { posOffset :: !Int
     , posFile   :: !FilePath
     }
-  deriving Show
+  deriving (Show, Eq, Ord)
