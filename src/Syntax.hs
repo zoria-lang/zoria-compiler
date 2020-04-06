@@ -63,12 +63,20 @@ data TopLevelDef a
     | InstanceDef (Instance a)
   deriving Show
 
-data LetDef a = LetDef
+data Definition a = Definition
     { letPattern :: Pattern a
     , letTypeSig :: Maybe TypeSig
     , letExpr    :: Expr a
     , letLoc     :: Position
     }
+  deriving Show
+
+data LetDef a
+    = LetDef (Definition a)
+    -- ^ single non-recursive definition 
+    | LetRecDef [Definition a] Position
+    -- ^ a set of mutually recursive definitions.
+    --   contains the position of 'let-rec' keyword
   deriving Show
 
 data TAlias = TAlias
@@ -208,9 +216,7 @@ data Expr a
     -- ^ list of expressions to be evaluated in order
     | LetIn (LetDef a) (Expr a) a
     -- ^ local definition. Binds only in the Expr following it. Does not
-    --   store Position as it is stored both in LetDef and (maybe) in Expr
-    | MultiLetIn [LetDef a] (Expr a) a
-    -- ^ multiple mutually recursive local definitions.
+    --   store Position as it is stored both in Definition and (maybe) in Expr
     | Lambda [Pattern a] (Expr a) (Maybe Identifier) Position a
     -- ^ lambda expression with the list of bindings (patterns) and
     --   the expression to evaluate upon the function call.
