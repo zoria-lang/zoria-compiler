@@ -64,7 +64,7 @@ data TopLevelDef a
   deriving Show
 
 data LetDef a = LetDef
-    { letPattern :: LetPattern a
+    { letPattern :: Pattern a
     , letTypeSig :: Maybe TypeSig
     , letExpr    :: Expr a
     , letLoc     :: Position
@@ -117,14 +117,6 @@ data Instance a = Instance
     , instanceMembers :: [LetDef a]
     , instanceLoc     :: Position
     }
-  deriving Show
-
-data LetPattern a
-    = FuncPattern 
-        { letFuncName :: Identifier
-        , letFuncArgs :: [Pattern a]
-        }
-    | LetPattern (Pattern a)
   deriving Show
 
 data TypeSig = TypeSig
