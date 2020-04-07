@@ -120,10 +120,11 @@ data Constraint = Constraint
   deriving Show
 
 data Instance a = Instance
-    { instanceClass   :: TypeName
-    , instanceType    :: TypeSig
-    , instanceMembers :: [LetDef a]
-    , instanceLoc     :: Position
+    { instanceClass       :: TypeName
+    , instanceType        :: TypeSig
+    , instanceMembers     :: [LetDef a]
+    , instanceLoc         :: Position
+    , instanceConstraints :: [Constraint]
     }
   deriving Show
 
