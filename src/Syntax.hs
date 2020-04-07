@@ -122,7 +122,7 @@ data Constraint = Constraint
 data Instance a = Instance
     { instanceClass       :: TypeName
     , instanceType        :: TypeSig
-    , instanceMembers     :: [LetDef a]
+    , instanceMembers     :: [Definition a]
     , instanceLoc         :: Position
     , instanceConstraints :: [Constraint]
     }
