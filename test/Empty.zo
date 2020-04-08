@@ -1,0 +1,5 @@
+module Empty {foo, bar, Baz{Foo,Bar}}
+
+import Foo\Empty {}
+
+import OtherEmpty {qwe} as Eeeee
