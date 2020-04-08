@@ -204,9 +204,13 @@ data PrimExpr
 data Expr a
     = Primitive PrimExpr Position a
     | Var Identifier Position a
-    -- ^ an identifier
-    | ScopedName ModName Identifier Position a
-    -- ^ an explicitly qualified name (e.g. Foo\bar)
+    -- ^ an identifier (e.g. map, (++))
+    | Constructor ConstructorName Position a
+    -- ^ a constructor (e.g. Just, [], ::, Nothing)
+    | QualifiedVar ModName Identifier Position a
+    -- ^ an explicitly qualified identifier (e.g. Foo\bar)
+    | QualifiedConstructor ModName ConstructorName Position a
+    -- ^ an explicitly qualified constructor (e.g. Foo\Nothing)
     | And (Expr a) (Expr a) Position a
     -- ^ 'and' boolean operator with its left and right operands
     | Or (Expr a) (Expr a) Position a
@@ -218,7 +222,7 @@ data Expr a
     | LetIn (LetDef a) (Expr a) a
     -- ^ local definition. Binds only in the Expr following it. Does not
     --   store Position as it is stored both in Definition and (maybe) in Expr
-    | Lambda (Pattern a) (Expr a) (Maybe Identifier) Position a
+    | Lambda (Pattern a) (Expr a) (Maybe T.Text) Position a
     -- ^ lambda expression with the list of bindings (patterns) and
     --   the expression to evaluate upon the function call.
     --   May remember the name if it was defined in 'let'-definiiton.
