@@ -161,11 +161,23 @@ module' path = do
         basePath <- getCurrentPath
         path <- findModulePath basePath prefix mod
         mod <- file path
-        globalOperators <- stateExportedOps <$> lift get
-        let newOps = concat $ Map.lookup path globalOperators
-        addLocalOperators newOps
-        -- TODO: extract imported operators and put them in the current map
+        importedOperators <- processImports path identifiers
+        addLocalOperators importedOperators
         return $ Import mod id alias position identifiers
+    -- Given the path and list of imports figure out what operators need to
+    -- be imported into the global 
+    processImports :: FilePath 
+                   -> (Maybe [Located ImportedValue]) 
+                   -> ParserIO [(T.Text, Priority, Fixity)]
+    processImports path Nothing = do
+        -- If the import list was implicit then we import everything
+        globalOperators <- stateExportedOps <$> lift get
+        return $ concat $ Map.lookup path globalOperators 
+    processImports path (Just imports) = do
+        globalOperators <- stateExportedOps <$> lift get
+        let operatorsList   = concat $ Map.lookup path globalOperators
+            strippedImports = concat $ strip . unlocated <$> imports
+        return $ filter (\(op,_,_) -> op `elem` strippedImports) operatorsList        
     -- Function which adds operators from an imported module and puts
     -- them in the local operator table.
     addLocalOperators :: [(T.Text, Priority, Fixity)] -> ParserIO ()
