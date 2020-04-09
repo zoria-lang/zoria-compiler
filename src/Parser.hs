@@ -14,7 +14,7 @@ import Control.Monad.State (StateT, runStateT, get, put)
 import Control.Monad.Trans.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (void, forM, when)
+import Control.Monad (void, forM, when, mapM_)
 import Control.Applicative ((<|>))
 import Data.Functor (($>))
 import Data.List (find)
@@ -24,8 +24,12 @@ import Utility (Position(..), findM)
 import GetOpt (Options(..), ModulePath(..), getOptions)
 import qualified Data.Map as Map
 import Syntax as AST
-import System.FilePath.Posix (takeDirectory, takeFileName, 
-                              dropExtension, (</>), (<.>))
+import System.FilePath.Posix ( takeDirectory
+                             , takeFileName
+                             , dropExtension
+                             , (</>)
+                             , (<.>)
+                             )
 
 -- The used monad stack looks like this:
 --      IO ⊂ ReaderT ⊂ StateT ⊂ ParsecT
@@ -49,7 +53,9 @@ type Errors   = P.ParseErrorBundle T.Text Void
 -- State used by StateT in the parser.
 data ParserState = ParserState
     { stateCurrentOps  :: LocalOperators
-    -- ^ operators defined in the currently parsed file
+    -- ^ operators visible in the currently parsed file
+    , stateLocalOps    :: [T.Text]
+    -- ^ list of operators defined within the current module
     , stateExportedOps :: GlobalOperators
     -- ^ operators that are exported by some files
     , stateVisited     :: Map.Map FilePath (Module ())
@@ -96,12 +102,11 @@ stdPreludePath = stdLibraryDir </> preludeName <.> fileExtension
 
 -- Fresh state for the parser's internal StateT monad
 newParserState :: ParserState
-newParserState = ParserState Map.empty Map.empty Map.empty []
+newParserState = ParserState Map.empty [] Map.empty Map.empty []
 
 -- Parser of programs. It is supposed to be used once.
 program :: ParserIO (AST.Program ())
 program = do
-    opts <- show <$> getopt
     -- TODO: import prelude
     rootFile <- head . optInputs <$> getopt
     Program <$> file rootFile
@@ -156,8 +161,15 @@ module' path = do
         basePath <- getCurrentPath
         path <- findModulePath basePath prefix mod
         mod <- file path
+        globalOperators <- stateExportedOps <$> lift get
+        let newOps = concat $ Map.lookup path globalOperators
+        addLocalOperators newOps
         -- TODO: extract imported operators and put them in the current map
         return $ Import mod id alias position identifiers
+    -- Function which adds operators from an imported module and puts
+    -- them in the local operator table.
+    addLocalOperators :: [(T.Text, Priority, Fixity)] -> ParserIO ()
+    addLocalOperators = mapM_ defineOperator
     -- Function for detection of invalid module names. Module names should 
     -- match the file names.
     checkModuleName :: ModName -> ParserIO ()
@@ -170,26 +182,35 @@ module' path = do
     -- Adds all locally defined operators that are supposed to be exported to
     -- the global operator export table. Clears the local operator table.
     exportOperators :: Maybe [Located ImportedValue] -> ParserIO ()
-    exportOperators Nothing = clearLocalOperators
-    exportOperators (Just exports) = do
-        state <- lift get
-        let locOpInfo = stateCurrentOps state
-            locOpList = foldr (++) [] locOpInfo
+    exportOperators Nothing = do 
+        locals <- stateLocalOps <$> lift get
+        exportOperatorsAux locals
+    exportOperators (Just exports) = exportOperatorsAux $ 
+        exports >>= (strip . unlocated)
+    -- Convert a ImportedValue wrapper into Text identifier(s).
+    strip :: ImportedValue -> [T.Text]
+    strip (ImportedIdentifier (Identifier id)) = [id]
+    strip (ImportedType _ Nothing) = []
+    strip (ImportedType _ (Just constructors)) = 
+        map (\(ConstructorName name) -> name) constructors
+    -- Helper functions that exports operators stripped from all
+    -- of the wrappers.
+    exportOperatorsAux :: [T.Text] -> ParserIO ()
+    exportOperatorsAux exports = do
+        state <- lift get            
+        let opTable = stateCurrentOps state
+            opList = foldr (++) [] opTable
             globalOps = stateExportedOps state
-        insertOpExports locOpInfo locOpList exports' globalOps []
+            exports' = filter (isOp opList) exports
+        insertOpExports opTable opList exports' globalOps []
         clearLocalOperators
       where
-        -- T.Text identifiers from exports list
-        exports' = filter isOp $ concatMap (stripExport . unlocated) exports
-        -- Checks if something is an operator by checking the first character.
-        isOp :: T.Text -> Bool
-        isOp name = T.head name `elem` (':' : operatorCharsList)
-        -- Convert a ImportedValue wrapper into Text identifier(s).
-        stripExport :: ImportedValue -> [T.Text]
-        stripExport (ImportedIdentifier (Identifier id)) = [id]
-        stripExport (ImportedType _ Nothing) = []
-        stripExport (ImportedType _ (Just constructors)) = 
-            map (\(ConstructorName name) -> name) constructors
+        -- Checks if something is an operator.
+        -- It must either have an operator character at the beginning or be
+        -- defined in the local operator table in case of prefix identifiers.
+        isOp :: [T.Text] -> T.Text -> Bool
+        isOp table name = (T.head name `elem` (':' : operatorCharsList))
+                        || name `elem` table
         -- Actually inserts local operator definitions into the parser state.
         insertOpExports :: LocalOperators
                         -> [T.Text]
@@ -217,7 +238,26 @@ module' path = do
     clearLocalOperators :: ParserIO ()
     clearLocalOperators = do
         state <- lift get
-        lift $ put state {stateCurrentOps = Map.empty}
+        lift $ put state { stateCurrentOps = Map.empty
+                         , stateLocalOps   = [] 
+                         }
+
+-- Function which adds an operator declaration to the operator table.
+defineOperator :: (T.Text, Priority, Fixity) -> ParserIO ()
+defineOperator (op, priority, fixity) = do
+    state @ ParserState { stateCurrentOps = visible } <- lift get
+    let previousOps   = concat $ Map.lookup (priority, fixity) visible
+        updatedTable  = Map.insert (priority, fixity) (op : previousOps) visible
+        updatedLocals = op : (stateLocalOps state)
+    assertUndefined op previousOps
+    lift $ put state { stateCurrentOps = updatedTable 
+                     , stateLocalOps   = updatedLocals
+                     }
+  where
+    -- Assert that we are not overwritting some other custom operator.
+    assertUndefined :: T.Text -> [T.Text] -> ParserIO ()
+    assertUndefined op ops = when (op `elem` ops) $ fail . T.unpack $ 
+        "illegal redeclaration of the operator (" <> op <> ")"
 
 -- Perform some parsing computation inside a stack frame. On the stack we store
 -- module names so that parser knows which module is parsed at the moment
@@ -305,39 +345,70 @@ popModulePath = do
     state <- lift get
     lift $ put state { stateModuleStack = tail . stateModuleStack $ state }
 
+-- Parser which expects an operator with given priority and fixity
+operator' :: Priority -> Fixity -> ParserIO T.Text
+operator' priority fixity = do
+    operators <- getOperators priority fixity
+    op <- P.choice $ map symbol operators
+    return op
+
+-- Get the operators with given priority and fixity that are defined in
+-- the current environment.
+getOperators :: Priority -> Fixity -> ParserIO [T.Text]
+getOperators priority fixity = do
+    table <- stateCurrentOps <$> lift get
+    return . concat $ Map.lookup (priority, fixity) table
+
 -- Parser for top-level definitions (types, classes, instances, let, etc.)
 topLevelDef :: ParserIO (TopLevelDef a)
-topLevelDef = do
-    P.optional . void . P.try $ operatorDecl
-    return undefined
+topLevelDef = operatorDefinition
+    -- TODO: implement
+    <|> P.try globalLetDef
+    <|> P.try globalLetRecDef
 
--- Parser for operator declaration. Every declaration must be followed
--- by the operator definition (either a let or type definition).
-operatorDecl :: ParserIO ()
-operatorDecl = do
+-- Parser for top-level let-definitions
+globalLetDef :: ParserIO (TopLevelDef a)
+globalLetDef = keyword "let" *> (TopLevelLet . LetDef <$> letDefBody)
+
+-- Parser for top-level let-rec-definitions
+globalLetRecDef :: ParserIO (TopLevelDef a)
+globalLetRecDef = undefined
+
+-- Parser for the definition following the 'let' keyword.
+-- Consists of the pattern, type signature and the expression.
+letDefBody :: ParserIO (Definition a)
+letDefBody = undefined
+
+-- Parser for operator declaration and the following let or type definition. 
+-- Every declaration must be followed by the operator definition.
+operatorDefinition :: ParserIO (TopLevelDef a)
+operatorDefinition = do
     keyword "operator"
     op <- infixIdentifier
     fixity <- operatorFixity <?> "operator fixity (left, right or none)"
-    priority <- L.decimal <?> "operator precedence (1..10)"
+    priority <- (L.decimal :: ParserIO Int) <?> "operator precedence (1..10)"
     checkPriority priority
-    assertUndefined op
--- TODO: during the import parsing store which operators are visible
---       in what files
+    defineOperator (op, priority, fixity)
+    -- TODO: parse the definition
+    -- if no definition then "operator declaration lacks accompanying binding!""
     return undefined
   where
     -- Assert that the priority is from the range 1..10
-    checkPriority :: Integer -> ParserIO ()
+    checkPriority :: Int -> ParserIO ()
     checkPriority p = when (p < 1 || p > 10) $
         fail $ "precedence must be in range (1..10), got \"" ++ show p ++ "\""
-    -- Assert that we are not overwritting some other operator.
-    assertUndefined :: T.Text -> ParserIO ()
-    assertUndefined = undefined
         
 -- Parser for operator fixity in operator declarations.
 operatorFixity :: ParserIO Fixity
 operatorFixity = (keyword "left" $> LeftFix) 
             <|> (keyword "right" $> RightFix) 
             <|> (keyword "none" $> NoneFix)
+
+-- Parser for identifiers that can be appear in the prefix position 
+-- (normal operators in brackets or variable names)
+prefixIdentifier :: ParserIO T.Text
+prefixIdentifier = lowercaseName 
+               <|> (surroundedBy "(" operator ")")
 
 -- Parser for identifiers that can be used in an infix way
 -- (operators or identifiers surrounded by backticks)
@@ -430,13 +501,8 @@ moduleIdentifierList = P.optional list
     -- Parser for single imported/exported thing (identifier or a type name
     -- (possibly with constructors)).
     exportElem :: ParserIO ImportedValue
-    exportElem = (ImportedIdentifier . Identifier <$> importIdentifier)
+    exportElem = (ImportedIdentifier . Identifier <$> prefixIdentifier)
              <|> (uncurry ImportedType <$> typeImport)
-    -- Parser for identifiers that can be imported/exported 
-    -- (normal operators in brackets or variable names)
-    importIdentifier :: ParserIO T.Text
-    importIdentifier = 
-        lowercaseName <|> (surroundedBy "(" operator ")") <?> "identifier"
     -- Parser for type imports. Type imports consist of type name optionally
     -- followed by the explicit type constructor list. [] is a valid type name.
     typeImport :: ParserIO (TypeName, Maybe [ConstructorName])
@@ -455,7 +521,7 @@ typeName = uppercaseName <|> symbol "[]"
 
 -- Parser combinator that turns a parser of something into a parser of the
 -- same thing but between 'left' and 'right' separators (e.g parenthesis).
-surroundedBy :: T.Text -> ParserIO T.Text -> T.Text -> ParserIO T.Text
+surroundedBy :: T.Text -> ParserIO a -> T.Text -> ParserIO a
 surroundedBy left parser right = symbol left *> parser <* symbol right
 
 -- Parser for constructor names (e.g. (::), Just, [])
@@ -470,21 +536,18 @@ keyword kw = keywordParserIO <?> ("keyword " ++ show kw)
   where
     keywordParserIO = (lexeme . P.try) $ P.string kw *> P.notFollowedBy nameChar
 
--- Parser for primitive expressions like integers, booleans, variables.
-primExpr :: ParserIO (Expr ())
+-- Parser for literal expressions.
+primExpr :: ParserIO PrimExpr
 primExpr = (P.try float <?> "float literal")
     <|> character
     <|> (integer <?> "integer literal")
     <|> string
     <|> (P.try boolean <?> "bool literal")
-    <|> (P.try varExpr <?> "identifier")
-    <|> (P.try constrExpr <?> "constructor")
-    -- TODO: qualified name
     <|> (unit <?> "()")
 
 -- Parser for variable names. Only lowercase identifiers and operators within
 -- parenthesis are valid names.
-varExpr :: ParserIO (Expr ())
+{- varExpr :: ParserIO (Expr ())
 varExpr = withPos $ \pos -> do
     var <- lowercaseName 
         <|> surroundedBy "(" operator ")"
@@ -495,21 +558,19 @@ constrExpr :: ParserIO (Expr ())
 constrExpr = withPos $ \pos -> do
     constr <- constructorName
     return $ Constructor constr pos ()
+ -}
 
 -- Parser for floating point numbers.
-float :: ParserIO (Expr ())
-float = withPos $ \pos -> do
-    num <- L.signed (pure ()) L.float
-    return $ Primitive (FloatLit num) pos ()
+float :: ParserIO PrimExpr
+float = L.signed (pure ()) L.float >>= return . FloatLit
 
 -- Parser for integers. Decimal, octal, hex and binary literals are supported.
 -- The numbers must be in range [-2^63 .. 2^63 - 1] or else the parsing fails.
-integer :: ParserIO (Expr ())
-integer = withPos $ \pos -> do
-    -- TODO: check for overflows
+integer :: ParserIO PrimExpr
+integer = do
     num <- (L.signed (pure ()) parseInt)
     checkOverflow num
-    return $ Primitive (IntLit $ fromInteger num) pos ()
+    return . IntLit . fromInteger $ num
   where
     -- Parser for a integer literal.
     parseInt :: ParserIO Integer
@@ -528,33 +589,102 @@ integer = withPos $ \pos -> do
 
 -- Parser for string literals.
 -- TODO: parse format strings.
-string :: ParserIO (Expr ())
-string = withPos $ \pos -> do
-    str <- P.char '"' *> (T.pack <$> P.manyTill L.charLiteral (P.char '"'))
-    return $ Primitive (StringLit str) pos ()
+string :: ParserIO PrimExpr
+string = P.char '"' 
+    >> (T.pack <$> P.manyTill L.charLiteral (P.char '"')) 
+    >>= return . StringLit
 
 -- Parser for character literals.
-character :: ParserIO (Expr ())
-character = withPos $ \pos -> do
-    c <- P.char '\'' *> L.charLiteral <* P.char '\''
-    return $ Primitive (CharLit c) pos ()
+character :: ParserIO PrimExpr
+character = (P.char '\'' *> L.charLiteral <* P.char '\'') >>= return . CharLit
 
 -- Parser for boolean literals ('True' or 'False')
-boolean :: ParserIO (Expr ())
-boolean = withPos $ \pos -> do
-    val <- (keyword "True" $> True) <|> (keyword "False" $> False)
-    return $ Primitive (BoolLit val) pos ()
+boolean :: ParserIO PrimExpr
+boolean = (keyword "True" $> True) 
+      <|> (keyword "False" $> False) 
+      >>= return . BoolLit
 
 -- Parser for units. Parens may be separated by whitespace.
-unit :: ParserIO (Expr ())
-unit = withPos $ \pos -> do
-    symbol "("
-    symbol ")"
-    return $ Primitive UnitLit pos ()
+unit :: ParserIO PrimExpr
+unit = symbol "(" *> pure UnitLit <* symbol ")"
 
 -- Parser for a single character that is allowed in identifiers.
 nameChar :: ParserIO Char
 nameChar = P.choice [P.alphaNumChar, P.char '\'', P.char '_']
+
+-- Parser for patterns which can appear either in 'match ... with' 
+-- or let definitions
+pattern :: ParserIO (Pattern ())
+pattern = (P.try namedPattern <?> "pattern synonym")
+      <|> constructorPattern
+
+-- Parser for constructor deconstruction (e.g. x::xs, Just _).
+constructorPattern :: ParserIO (Pattern ())
+constructorPattern = P.try (infixConstructorPattern 10 NoneFix)
+                 <|> atomicPattern
+
+-- Infix application of a constructor (e.g. a `Foo` b, x::xs)
+infixConstructorPattern :: Priority -> Fixity -> ParserIO (Pattern ())
+infixConstructorPattern 0 _ = prefixConstructorPattern
+infixConstructorPattern priority NoneFix = withPos $ \pos -> do
+    lhs <- infixConstructorPattern priority RightFix
+    rhs <- P.optional $ pure (,) 
+        <*> (P.try $ operator' priority NoneFix)
+        <*> infixConstructorPattern priority RightFix
+    return $ case rhs of
+        Nothing -> lhs
+        Just (op, rhs) -> 
+            ConstructorPattern (ConstructorName op) [lhs, rhs] pos ()
+infixConstructorPattern priority RightFix = undefined    
+-- TODO: implement
+infixConstructorPattern priority LeftFix = undefined
+-- TODO: implement
+
+-- Prefix application of a constructor (e.g. Just 42, (::) x xs)
+prefixConstructorPattern :: ParserIO (Pattern ())
+prefixConstructorPattern = withPos $ \pos -> do
+    constructor <- constructorName
+    arguments <- P.many atomicPattern
+    return $ ConstructorPattern constructor arguments pos ()
+
+-- Parser for synonym patterns (e.g. ys@(x::xs))
+namedPattern :: ParserIO (Pattern ())
+namedPattern = withPos $ \pos -> do
+    name <- Identifier <$> prefixIdentifier
+    symbol "@"
+    pat <- atomicPattern
+    return $ NamedPattern name pat pos ()
+
+-- Pattern expression with the highest precedence or any pattern in parenthesis.
+atomicPattern :: ParserIO (Pattern ())
+atomicPattern = (P.try $ surroundedBy "(" pattern ")")
+            <|> wildcardPattern
+            <|> (P.try literalPattern)
+            <|> variablePattern
+            <|> tuplePattern -- it's at the end because it matches () and (_)
+
+-- Tuple of patterns (e.g. (1,2), ())
+tuplePattern :: ParserIO (Pattern ())
+tuplePattern = withPos $ \pos -> do
+    subpatterns <- separatedList "(" ")" pattern ","
+    -- TODO: assert that the length is at least 2
+    return $ TuplePattern subpatterns pos ()
+
+-- Parser that parses patterns consisting of variables
+variablePattern :: ParserIO (Pattern ())
+variablePattern = withPos $ \pos -> do
+    var <- Identifier <$> prefixIdentifier
+    return $ VarPattern var pos ()
+
+-- Parser for the '_' pattern.
+wildcardPattern :: ParserIO (Pattern ())
+wildcardPattern = withPos $ \pos -> symbol "_" $> WildcardPattern pos ()
+
+-- Parser for constant patterns (e.g. 42, "string", True)
+literalPattern :: ParserIO (Pattern ())
+literalPattern = withPos $ \pos -> do
+    expr <- primExpr
+    return $ ConstPattern expr pos ()
 
 -- Parser combinator that lets you easily extract the current file position.
 -- The argument is a function which takes a position and as a result returns
