@@ -597,7 +597,7 @@ keyword kw = keywordParserIO <?> ("keyword " ++ show kw)
 
 -- Parser for literal expressions.
 primExpr :: ParserIO PrimExpr
-primExpr = (P.try float <?> "float literal")
+primExpr = lexeme $ (P.try float <?> "float literal")
     <|> character
     <|> (integer <?> "integer literal")
     <|> string
@@ -674,13 +674,8 @@ nameChar = P.choice [P.alphaNumChar, P.char '\'', P.char '_']
 -- Parser for patterns which can appear either in 'match ... with' 
 -- or let definitions
 pattern :: ParserIO (Pattern ())
-pattern = (P.try namedPattern <?> "pattern synonym")
-      <|> constructorPattern
-
--- Parser for constructor deconstruction (e.g. x::xs, Just _).
-constructorPattern :: ParserIO (Pattern ())
-constructorPattern = P.try (infixConstructorPattern 10 NoneFix)
-                 <|> atomicPattern
+pattern = P.try (infixConstructorPattern 10 NoneFix)
+    <|> namedPattern                 
 
 -- Infix application of a constructor (e.g. a `Foo` b, x::xs)
 infixConstructorPattern :: Priority -> Fixity -> ParserIO (Pattern ())
@@ -728,24 +723,43 @@ infixConstructorPattern priority LeftFix = withPos $ \pos -> do
 prefixConstructorPattern :: ParserIO (Pattern ())
 prefixConstructorPattern = withPos $ \pos -> do
     constructor <- constructorName
-    arguments <- P.many atomicPattern
+    arguments <- P.many namedPattern
     return $ ConstructorPattern constructor arguments pos ()
 
 -- Parser for synonym patterns (e.g. ys@(x::xs))
 namedPattern :: ParserIO (Pattern ())
-namedPattern = withPos $ \pos -> do
-    name <- Identifier <$> prefixIdentifier
-    symbol "@"
-    pat <- atomicPattern
-    return $ NamedPattern name pat pos ()
+namedPattern = P.try namedPattern' <|> atomicPattern
+  where
+    namedPattern' :: ParserIO (Pattern ())
+    namedPattern' = withPos $ \pos -> do
+        name <- Identifier <$> prefixIdentifier
+        symbol "@"
+        pat <- atomicPattern
+        return $ NamedPattern name pat pos ()
+
+-- Parser for list literals. List literals are just syntax sugar for
+-- :: operator and [] constructor.
+listLiteralPattern :: ParserIO (Pattern ())
+listLiteralPattern = withPos $ \pos -> do
+    (Located pos ps) <- located $ separatedList "[" "]" pattern ","
+    return $ foldPatterns ps pos
+  where
+    foldPatterns :: [Pattern ()] -> Position -> Pattern ()
+    foldPatterns [] pos = ConstructorPattern (ConstructorName "[]") [] pos ()
+    foldPatterns (p:ps) pos = 
+        ConstructorPattern (ConstructorName "::") [p, ps'] pos ()
+      where
+        ps' = foldPatterns ps pos
 
 -- Pattern expression with the highest precedence or any pattern in parenthesis.
 atomicPattern :: ParserIO (Pattern ())
-atomicPattern = (P.try $ surroundedBy "(" pattern ")")
-            <|> wildcardPattern
-            <|> (P.try literalPattern)
-            <|> variablePattern
-            <|> tuplePattern -- it's at the end because it matches () and (_)
+atomicPattern = lexeme $ 
+    wildcardPattern
+    <|> P.try literalPattern
+    <|> P.try variablePattern
+    <|> P.try (surroundedBy "(" pattern ")")
+    <|> listLiteralPattern
+    <|> tuplePattern
 
 -- Tuple of patterns (e.g. (1,2), ())
 tuplePattern :: ParserIO (Pattern ())
