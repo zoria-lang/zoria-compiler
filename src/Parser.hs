@@ -32,7 +32,7 @@ import System.FilePath.Posix ( takeDirectory
                              )
 
 -- The used monad stack looks like this:
---      IO ⊂ ReaderT ⊂ StateT ⊂ ParsecT
+--   ParsecT ⊃ StateT ⊃ ReaderT ⊃ IO
 -- 
 -- * IO is needed to open additional files during parsing.
 -- * Reader is useful to access the command line arguments.
@@ -54,7 +54,7 @@ type Errors   = P.ParseErrorBundle T.Text Void
 data ParserState = ParserState
     { stateCurrentOps  :: LocalOperators
     -- ^ operators visible in the currently parsed file
-    , stateLocalOps    :: [T.Text]
+    , stateLocalOps    :: [CustomOperator]
     -- ^ list of operators defined within the current module
     , stateExportedOps :: GlobalOperators
     -- ^ operators that are exported by some files
@@ -65,18 +65,25 @@ data ParserState = ParserState
     }
   deriving Show
 
-type LocalOperators = Map.Map (Priority, Fixity) [T.Text]
-type GlobalOperators = Map.Map FilePath [(T.Text, Priority, Fixity)]
+type LocalOperators  = Map.Map (Priority, Fixity) [CustomOperator]
+type GlobalOperators = Map.Map FilePath [(CustomOperator, Priority, Fixity)]
 
 -- Custom operator priority. Should be be in range 1..10.
 type Priority = Int
+
+data CustomOperator
+    = ConstrOperator T.Text
+    | PrefixConstrOperator T.Text
+    | VarOperator T.Text
+    | PrefixVarOperator T.Text
+  deriving (Show, Ord, Eq)
 
 -- Fixity of a custom operator.
 data Fixity
     = LeftFix
     | RightFix
     | NoneFix
-    deriving (Show, Ord, Eq)
+  deriving (Show, Ord, Eq)
 
 -- Single import statement before being actually imported.
 type RawImport = (ModuleId, Maybe ModName, Maybe [Located ImportedValue])
@@ -119,7 +126,7 @@ file path = do
     case Map.lookup path visited of
         Nothing -> do
             fileContents <- liftIO . T.readFile $ path
-            result <- lift $ P.runParserT (module' path) path fileContents
+            result       <- lift $ P.runParserT (module' path) path fileContents
             -- TODO: handle errors with 'region'
             handleError result
         Just mod -> return mod
@@ -127,8 +134,8 @@ file path = do
     -- Handler for errors from submodules
     handleError :: Either Errors (Module ()) -> ParserIO (Module ())
     handleError (Right mod) = return mod
-    handleError (Left err) = 
-        liftIO $ putStrLn (P.errorBundlePretty err) >> exitFailure
+    handleError (Left err) = liftIO $ 
+        putStrLn (P.errorBundlePretty err) >> exitFailure
     -- Function for detection of import cycles, which are forbidden.
     assertNoCycle :: FilePath -> ParserIO ()
     assertNoCycle path = do
@@ -147,8 +154,8 @@ module' path = do
     -- TODO: store the full absolute module name instead
     checkModuleName name
     withStack name path $ do
-        rawImports <- P.many $ located (import' <?> "module import")
-        imports <- forM rawImports importFile
+        rawImports  <- P.many $ located (import' <?> "module import")
+        imports     <- forM rawImports importFile
         definitions <- P.many $ topLevelDef
         skipWhitespace >> P.eof
         exportOperators exports -- at the end we update the operator table
@@ -157,30 +164,27 @@ module' path = do
     -- Given the import information locate and parse a submodule.
     importFile :: Located RawImport -> ParserIO (Import ())
     importFile (Located position (id, alias, identifiers)) = do
-        let ModuleId prefix mod = id
+        let (ModuleId prefix mod) = id
         basePath <- getCurrentPath
-        path <- findModulePath basePath prefix mod
-        mod <- file path
-        importedOperators <- processImports path identifiers
-        addLocalOperators importedOperators
+        path     <- findModulePath basePath prefix mod
+        mod      <- file path
+        visible  <- (concat . Map.lookup path . stateExportedOps) <$> lift get
+        addLocalOperators $ processImports path identifiers visible
         return $ Import mod id alias position identifiers
     -- Given the path and list of imports figure out what operators need to
     -- be imported into the global 
     processImports :: FilePath 
                    -> (Maybe [Located ImportedValue]) 
-                   -> ParserIO [(T.Text, Priority, Fixity)]
-    processImports path Nothing = do
-        -- If the import list was implicit then we import everything
-        globalOperators <- stateExportedOps <$> lift get
-        return $ concat $ Map.lookup path globalOperators 
-    processImports path (Just imports) = do
-        globalOperators <- stateExportedOps <$> lift get
-        let operatorsList   = concat $ Map.lookup path globalOperators
-            strippedImports = concat $ strip . unlocated <$> imports
-        return $ filter (\(op,_,_) -> op `elem` strippedImports) operatorsList        
+                   -> [(CustomOperator, Priority, Fixity)]
+                   -> [(CustomOperator, Priority, Fixity)]
+    processImports _ Nothing visible = visible
+    processImports path (Just imports) visible =
+        filter (\(op,_,_) -> unwrapOperator op `elem` strippedImports) visible
+      where
+        strippedImports = concat $ strip . unlocated <$> imports
     -- Function which adds operators from an imported module and puts
     -- them in the local operator table.
-    addLocalOperators :: [(T.Text, Priority, Fixity)] -> ParserIO ()
+    addLocalOperators :: [(CustomOperator, Priority, Fixity)] -> ParserIO ()
     addLocalOperators = mapM_ defineOperator
     -- Function for detection of invalid module names. Module names should 
     -- match the file names.
@@ -196,7 +200,7 @@ module' path = do
     exportOperators :: Maybe [Located ImportedValue] -> ParserIO ()
     exportOperators Nothing = do 
         locals <- stateLocalOps <$> lift get
-        exportOperatorsAux locals
+        exportOperatorsAux $ unwrapOperator <$> locals
     exportOperators (Just exports) = exportOperatorsAux $ 
         exports >>= (strip . unlocated)
     -- Convert a ImportedValue wrapper into Text identifier(s).
@@ -210,42 +214,48 @@ module' path = do
     exportOperatorsAux :: [T.Text] -> ParserIO ()
     exportOperatorsAux exports = do
         state <- lift get            
-        let opTable = stateCurrentOps state
-            opList = foldr (++) [] opTable
+        let opTable   = stateCurrentOps state
+            opList    = foldr (++) [] opTable
             globalOps = stateExportedOps state
-            exports' = filter (isOp opList) exports
+            exports'  = filter (isOp opList) exports
         insertOpExports opTable opList exports' globalOps []
         clearLocalOperators
       where
         -- Checks if something is an operator.
         -- It must either have an operator character at the beginning or be
         -- defined in the local operator table in case of prefix identifiers.
-        isOp :: [T.Text] -> T.Text -> Bool
+        isOp :: [CustomOperator] -> T.Text -> Bool
         isOp table name = (T.head name `elem` (':' : operatorCharsList))
-                        || name `elem` table
+                        || name `elem` (unwrapOperator <$> table)
         -- Actually inserts local operator definitions into the parser state.
         insertOpExports :: LocalOperators
-                        -> [T.Text]
+                        -> [CustomOperator]
                         -> [T.Text]
                         -> GlobalOperators 
-                        -> [(T.Text, Priority, Fixity)]
+                        -> [(CustomOperator, Priority, Fixity)]
                         -> ParserIO ()
         insertOpExports _ _ [] globals locals = do
             path <- getCurrentPath
             let newGlobals = Map.insert path locals globals
             state <- lift get
             lift $ put state { stateExportedOps = newGlobals }
-        insertOpExports opInfo opList (e:es) globals locals
-            | e `elem` opList = let info = findOpInfo e opInfo in
-                insertOpExports opInfo opList es globals (info : locals)
-            | otherwise = fail $ "Undefined exported operator " ++ show e
+        insertOpExports opInfo opList (e:es) globals locals =
+            case findOpInfo e opInfo of
+                Just info -> 
+                    insertOpExports opInfo opList es globals (info : locals)
+                Nothing -> fail $ "Undefined exported operator " ++ show e
         -- Local operator table has fixity and priority as keys for parsing
         -- performance. This function inverts the map to find the fixity
         -- and priority for a given operator. It is assumed, that the operator
-        -- is defined.
-        findOpInfo :: T.Text -> LocalOperators -> (T.Text, Priority, Fixity)
-        findOpInfo op operators = (\(p,f) -> (op, p, f)) . fst . fromJust $ 
-            find (elem op . snd) (Map.toList operators)
+        -- is defined. It isn't cheap but it's performed only once per file.
+        findOpInfo :: T.Text -> LocalOperators -> Maybe (CustomOperator, Priority, Fixity)
+        findOpInfo op operators = do
+            opGroup <- find (elem op . map unwrapOperator . snd) operatorsAsList
+            wrappedOp <- find ((== op) . unwrapOperator) (snd opGroup)
+            let (priority, fixity) = fst opGroup
+            return (wrappedOp, priority, fixity)
+          where 
+            operatorsAsList = Map.toList operators
     -- Remove the local operator table from the parser state.
     clearLocalOperators :: ParserIO ()
     clearLocalOperators = do
@@ -254,8 +264,14 @@ module' path = do
                          , stateLocalOps   = [] 
                          }
 
+unwrapOperator :: CustomOperator -> T.Text
+unwrapOperator (ConstrOperator op) = op
+unwrapOperator (PrefixConstrOperator op) = op
+unwrapOperator (VarOperator op) = op
+unwrapOperator (PrefixVarOperator op) = op
+
 -- Function which adds an operator declaration to the operator table.
-defineOperator :: (T.Text, Priority, Fixity) -> ParserIO ()
+defineOperator :: (CustomOperator, Priority, Fixity) -> ParserIO ()
 defineOperator (op, priority, fixity) = do
     state @ ParserState { stateCurrentOps = visible } <- lift get
     let previousOps   = concat $ Map.lookup (priority, fixity) visible
@@ -267,9 +283,9 @@ defineOperator (op, priority, fixity) = do
                      }
   where
     -- Assert that we are not overwritting some other custom operator.
-    assertUndefined :: T.Text -> [T.Text] -> ParserIO ()
-    assertUndefined op ops = when (op `elem` ops) $ fail . T.unpack $ 
-        "illegal redeclaration of the operator (" <> op <> ")"
+    assertUndefined :: CustomOperator -> [CustomOperator] -> ParserIO ()
+    assertUndefined op ops = when (op `elem` ops) $ fail $ 
+        "illegal redeclaration of the operator " ++ prettyPrintCustomOp op
 
 -- Perform some parsing computation inside a stack frame. On the stack we store
 -- module names so that parser knows which module is parsed at the moment
@@ -289,7 +305,7 @@ findModulePath current prefix name = do
     let choices = absPath : (optModPath <$> filter matching externalModules)
     path <- findM (liftIO . doesFileExist) choices
     case path of
-        Nothing -> fail $ "cannot find module " ++ show (unwrapName name)
+        Nothing   -> fail $ "cannot find module " ++ show (unwrapName name)
         Just path -> return path
   where
     -- Absolute path to a file created from the relative path from the
@@ -317,8 +333,8 @@ findModulePath current prefix name = do
 import' :: ParserIO RawImport
 import' = do
     keyword "import"
-    name <- qualifiedModuleName <?> "module name"
-    list <- moduleIdentifierList
+    name  <- qualifiedModuleName <?> "module name"
+    list  <- moduleIdentifierList
     alias <- P.optional $ keyword "as" *> (uppercaseName <?> "module synonym")
     return (name, ModName <$> alias, list)
 
@@ -341,7 +357,7 @@ qualifiedModuleName = do
 moduleHeader :: ParserIO (ModName, Maybe [Located ImportedValue])
 moduleHeader = do
     keyword "module"
-    name <- uppercaseName <?> "module name"
+    name    <- uppercaseName <?> "module name"
     exports <- moduleIdentifierList
     return (ModName name, exports)
 
@@ -357,19 +373,64 @@ popModulePath = do
     state <- lift get
     lift $ put state { stateModuleStack = tail . stateModuleStack $ state }
 
--- Parser which expects an operator with given priority and fixity
-operator' :: Priority -> Fixity -> ParserIO T.Text
-operator' priority fixity = do
-    operators <- getOperators priority fixity
-    op <- P.choice $ map symbol operators
-    return op
+-- Pretty prints a custom operator.
+prettyPrintCustomOp :: CustomOperator -> String
+prettyPrintCustomOp (ConstrOperator op) = '`' : T.unpack op ++ "`"
+prettyPrintCustomOp (PrefixConstrOperator op) = '(' : T.unpack op ++ ")"
+prettyPrintCustomOp (VarOperator op) = '`' : T.unpack op ++ "`"
+prettyPrintCustomOp (PrefixVarOperator op) = '(' : T.unpack op ++ ")"
+
+-- Check whether some custom operator is a prefix operator (e.g. `elem`)
+isPrefixOp :: CustomOperator -> Bool
+isPrefixOp (PrefixConstrOperator _) = True
+isPrefixOp (PrefixVarOperator _) = True
+isPrefixOp _ = False
+
+-- Checks whether some custom operators is an infix operator (e.g. ::, >>=)
+isInfixOp :: CustomOperator -> Bool
+isInfixOp = not . isPrefixOp
+
+-- Checks whether some custom operator is a constructor operator
+isConstructorOp :: CustomOperator -> Bool
+isConstructorOp (ConstrOperator _) = True
+isConstructorOp (PrefixConstrOperator _) = True
+isConstructorOp _ = False
+
+-- Checks whether some custom operator is a normal operator
+isNormalOp :: CustomOperator -> Bool
+isNormalOp = not . isConstructorOp
 
 -- Get the operators with given priority and fixity that are defined in
 -- the current environment.
-getOperators :: Priority -> Fixity -> ParserIO [T.Text]
+getOperators :: Priority -> Fixity -> ParserIO [CustomOperator]
 getOperators priority fixity = do
     table <- stateCurrentOps <$> lift get
     return . concat $ Map.lookup (priority, fixity) table
+
+-- Function which given a predicate on custom operators creates a parser that
+-- matches this kind of operators with the given priority and fixity.
+kindOfOperator :: (CustomOperator -> Bool) 
+                -> Priority 
+                -> Fixity 
+                -> ParserIO T.Text
+kindOfOperator kind priority fixity = do
+    operators <- filter kind <$> getOperators priority fixity
+    let infixOps  = unwrapOperator <$> filter isInfixOp operators
+        prefixOps = unwrapOperator <$> filter isPrefixOp operators
+    infixOp infixOps <|> prefixOp prefixOps
+  where
+    infixOp :: [T.Text] -> ParserIO T.Text
+    infixOp ops = P.choice (map symbol ops)
+    prefixOp :: [T.Text] -> ParserIO T.Text
+    prefixOp ops = P.char '`' *> P.choice (map P.string ops) <* symbol "`"
+
+-- Parser for constructor operators (e.g. ::, `Foo`)
+constructorOperator' :: Priority -> Fixity -> ParserIO T.Text
+constructorOperator' = kindOfOperator isConstructorOp
+
+-- Parser for non-constructor operators (e.g. ++, `elem`)
+operator' :: Priority -> Fixity -> ParserIO T.Text
+operator' = kindOfOperator isNormalOp
 
 -- Parser for top-level definitions (types, classes, instances, let, etc.)
 topLevelDef :: ParserIO (TopLevelDef a)
@@ -394,22 +455,8 @@ letDefBody = undefined
 -- Parser for operator declaration and the following let or type definition. 
 -- Every declaration must be followed by the operator definition.
 operatorDefinition :: ParserIO (TopLevelDef a)
-operatorDefinition = do
-    keyword "operator"
-    op <- infixIdentifier
-    fixity <- operatorFixity <?> "operator fixity (left, right or none)"
-    priority <- (L.decimal :: ParserIO Int) <?> "operator precedence (1..10)"
-    checkPriority priority
-    defineOperator (op, priority, fixity)
-    -- TODO: parse the definition
-    -- if no definition then "operator declaration lacks accompanying binding!""
-    return undefined
-  where
-    -- Assert that the priority is from the range 1..10
-    checkPriority :: Int -> ParserIO ()
-    checkPriority p = when (p < 1 || p > 10) $
-        fail $ "precedence must be in range (1..10), got \"" ++ show p ++ "\""
-        
+operatorDefinition = undefined
+
 -- Parser for operator fixity in operator declarations.
 operatorFixity :: ParserIO Fixity
 operatorFixity = (keyword "left" $> LeftFix) 
@@ -498,11 +545,11 @@ located parser = withPos $ \pos -> Located pos <$> parser
 -- Parser for lists starting with "start", ending with "end", separated by
 -- "sep" and with elements that match the given parser "elem".
 separatedList :: T.Text -> T.Text -> ParserIO a -> T.Text -> ParserIO [a]
-separatedList start end elem sep = start' *> (elements <|> pure []) <* end'
+separatedList start end elem sep = P.between start' end' (P.sepBy elem sep')
   where
     start' = symbol start
     end'   = symbol end
-    elements = pure (:) <*> elem <*> P.many (symbol sep *> elem)
+    sep'   = symbol sep
 
 -- Parser for import lists. Despite the name it is also used to parse
 -- the export lists. The lists are optional so it returns Maybe.
@@ -519,7 +566,7 @@ moduleIdentifierList = P.optional list
     -- followed by the explicit type constructor list. [] is a valid type name.
     typeImport :: ParserIO (TypeName, Maybe [ConstructorName])
     typeImport = do
-        typeName <- TypeName <$> typeName <?> "type name"
+        typeName     <- TypeName <$> typeName <?> "type name"
         constructors <- P.optional constructorList
         return (typeName, constructors)
     -- Parser for lists of exported/imported type constructors.
@@ -641,16 +688,41 @@ infixConstructorPattern 0 _ = prefixConstructorPattern
 infixConstructorPattern priority NoneFix = withPos $ \pos -> do
     lhs <- infixConstructorPattern priority RightFix
     rhs <- P.optional $ pure (,) 
-        <*> (P.try $ operator' priority NoneFix)
+        <*> (P.try $ constructorOperator' priority NoneFix)
         <*> infixConstructorPattern priority RightFix
     return $ case rhs of
-        Nothing -> lhs
         Just (op, rhs) -> 
             ConstructorPattern (ConstructorName op) [lhs, rhs] pos ()
-infixConstructorPattern priority RightFix = undefined    
--- TODO: implement
-infixConstructorPattern priority LeftFix = undefined
--- TODO: implement
+        Nothing -> lhs
+infixConstructorPattern priority RightFix = withPos $ \pos -> do
+    lhs <- infixConstructorPattern priority LeftFix
+    rhs <- P.optional $ pure (,)
+        <*> (P.try $ constructorOperator' priority RightFix)
+        <*> infixConstructorPattern priority RightFix
+    return $ case rhs of
+        Just (op, rhs) -> 
+            ConstructorPattern (ConstructorName op) [lhs, rhs] pos ()
+        Nothing -> lhs
+infixConstructorPattern priority LeftFix = withPos $ \pos -> do
+    lhs <- infixConstructorPattern (priority - 1) NoneFix
+    replacePos pos <$> leftfixConstructorPattern priority lhs
+  where
+    -- Tail recursive parser for left-recursion elimination.
+    leftfixConstructorPattern :: Priority -> Pattern () -> ParserIO (Pattern ())
+    leftfixConstructorPattern priority acc = withPos $ \pos -> do
+        op <- P.optional $ constructorOperator' priority LeftFix
+        case op of
+            Nothing -> return acc
+            Just op -> do
+                rhs <- infixConstructorPattern (priority - 1) NoneFix
+                leftfixConstructorPattern priority $
+                    ConstructorPattern (ConstructorName op) [acc, rhs] pos ()
+    -- Function that replaces the position stored within the pattern because
+    -- the position from leftfixConstructorPattern is not valid for the
+    -- first pattern in the sequence
+    replacePos :: Position -> Pattern () -> Pattern ()
+    replacePos pos (ConstructorPattern name args _ _) = 
+        ConstructorPattern name args pos ()
 
 -- Prefix application of a constructor (e.g. Just 42, (::) x xs)
 prefixConstructorPattern :: ParserIO (Pattern ())
@@ -755,7 +827,7 @@ runParser parser file input initState options = do
 -- specified as command line argument.
 parseProgram :: IO (Program ())
 parseProgram = do
-    opts <- getOptions
+    opts   <- getOptions
     result <- runParser program "" "" newParserState opts
     case result of
         Left err  -> do 
