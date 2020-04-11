@@ -485,17 +485,17 @@ operatorDecl :: ParserIO ()
 operatorDecl = do
     P.try $ keyword "operator"
     op <- customOperator <?> "infix identifier"
-    priority <- L.decimal
+    priority <- lexeme L.decimal <?> "operator precedence"
+    fixity <- operatorFixity <?> "operator fixity (left, none or right)"
     assertValidPriority priority
-    fixity <- operatorFixity
     defineOperator (op, priority, fixity)
   where
     assertValidPriority :: Priority -> ParserIO ()
     assertValidPriority priority =
         when (priority < 1 || priority > 10) $
-            fail $ "priority out of range (got \"" 
+            fail $ "precedence out of range (got " 
                 ++ show priority 
-                ++ "\", expected 1..10"
+                ++ ", expected 1..10)"
 
 -- Parser for operators in operator declarations.
 customOperator :: ParserIO CustomOperator
@@ -613,7 +613,7 @@ moduleIdentifierList = P.optional list
     -- followed by the explicit type constructor list. [] is a valid type name.
     typeImport :: ParserIO (TypeName, Maybe [ConstructorName])
     typeImport = do
-        typeName     <- TypeName <$> typeName <?> "type name"
+        typeName     <- TypeName <$> typeName
         constructors <- P.optional constructorList
         return (typeName, constructors)
     -- Parser for lists of exported/imported type constructors.
@@ -623,7 +623,10 @@ moduleIdentifierList = P.optional list
 
 -- Parser for type names (e.g. Maybe, Int, [])
 typeName :: ParserIO T.Text
-typeName = uppercaseName <|> symbol "[]"
+typeName = (uppercaseName <|> symbol "[]") <?> "type name"
+
+typeVariable :: ParserIO T.Text
+typeVariable = lowercaseName <?> "type variable"
 
 -- Parser combinator that turns a parser of something into a parser of the
 -- same thing but between 'left' and 'right' separators (e.g parenthesis).
@@ -644,7 +647,89 @@ keyword kw = keywordParserIO <?> ("keyword " ++ show kw)
 
 -- Parser for explicit type signatures.
 typeSignature :: ParserIO TypeSig
-typeSignature = undefined --TODO: implement
+typeSignature = do
+    context <- P.optional . P.try $ constraints <* symbol "=>"
+    sig     <- type'
+    return $ TypeSig (concat context) sig
+
+-- Parser for constraints in type signatures.
+constraints :: ParserIO [Constraint]
+constraints = pure <$> singleConstraint
+          <|> separatedList "(" ")" singleConstraint ","
+  where
+    singleConstraint :: ParserIO Constraint
+    singleConstraint = do
+        className  <- TypeName <$> typeName
+        classParam <- TypeVar  <$> typeVariable
+        return $ Constraint className classParam
+
+-- Parser for types.
+type' :: ParserIO Type
+type' = P.try functionType
+    <|> paramType
+
+-- Parser for function types (e.g. a -> b)
+functionType :: ParserIO Type
+functionType = do
+    from <- paramType
+    to   <- P.optional (symbol "->" >> functionType)
+    return $ case to of
+        Nothing -> from
+        Just to -> FunctionType from to
+
+-- Parser for parametrized types (e.g. Maybe a, f a b c)
+paramType :: ParserIO Type
+paramType = P.try polyParamType <|> P.try concreteParamType <|> atomicType
+  where
+    polyParamType :: ParserIO Type
+    polyParamType = do
+        t <- TypeVar <$> typeVariable
+        args <- P.many atomicType 
+        return $ case args of
+            [] -> TypeVariable t
+            _  -> PolymorphicParamType t args
+    concreteParamType :: ParserIO Type
+    concreteParamType = do
+        t <- TypeName <$> typeName
+        args <- P.many atomicType
+        return $ case args of
+            [] -> NonPrimType t
+            _  -> ParamType t args
+
+-- Parser for types that are atomic (like type names or types in brackets)
+atomicType :: ParserIO Type
+atomicType = (P.try arrayType <?> "array type")
+        <|> (P.try listType <?> "list type")
+        <|> (PrimitiveType <$> (P.try primType <?> "type name"))
+        <|> (NonPrimType . TypeName <$> typeName <?> "type name")
+        <|> (TypeVariable . TypeVar <$> typeVariable <?> "type variable")
+        <|> P.try (P.between (symbol "(") (symbol ")") type')
+        <|> tupleType <?> "tuple type"
+
+-- Parser for arrays types (e.g. [<Int>], [[<Float>]])
+arrayType :: ParserIO Type
+arrayType = ArrayType <$> (symbol "[<" *> type' <* symbol ">]")
+
+-- Parser for tuples of types. They must be at least of length 2.
+tupleType :: ParserIO Type
+tupleType = TupleType <$> separatedList "(" ")" type' ","
+
+-- Parser for list type syntax sugar. [] is a normal valid type name, but
+-- there is a synonym [a] which is the same as ([] a)
+listType :: ParserIO Type
+listType = do
+    t <- P.between (symbol "[") (symbol "]") type'
+    return $ ParamType (TypeName "[]") [t]
+
+-- Parser for primitive types like Int or ()
+primType :: ParserIO PrimType
+primType = keyword "Int" $> IntT
+       <|> keyword "Float" $> FloatT
+       <|> keyword "String" $> StringT
+       <|> keyword "Bool" $> BoolT
+       <|> symbol "(" *> pure UnitT <* symbol ")"
+       <|> P.try (keyword "Char") $> CharT
+       <|> keyword "CPtr" $> CPtrT
 
 -- Parser for expressions
 expression :: ParserIO (Expr ())
