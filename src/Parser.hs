@@ -18,7 +18,7 @@ import Control.Monad (void, forM, when, mapM_)
 import Control.Applicative ((<|>))
 import Data.Functor (($>))
 import Data.List (find)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, isJust)
 import Data.Void (Void)
 import Utility (Position(..), findM)
 import GetOpt (Options(..), ModulePath(..), getOptions)
@@ -165,20 +165,24 @@ module' path = do
     importFile :: Located RawImport -> ParserIO (Import ())
     importFile (Located position (id, alias, identifiers)) = do
         let (ModuleId prefix mod) = id
+        let hasAlias = isJust alias
         basePath <- getCurrentPath
         path     <- findModulePath basePath prefix mod
         mod      <- file path
         visible  <- (concat . Map.lookup path . stateExportedOps) <$> lift get
-        addLocalOperators $ processImports path identifiers visible
+        addLocalOperators $ processImports path identifiers visible hasAlias
         return $ Import mod id alias position identifiers
     -- Given the path and list of imports figure out what operators need to
-    -- be imported into the global 
+    -- be imported into the current operator table. If the import has an alias
+    -- then the operators have to be explicitly imported to be included.
     processImports :: FilePath 
                    -> (Maybe [Located ImportedValue]) 
                    -> [(CustomOperator, Priority, Fixity)]
+                   -> Bool
                    -> [(CustomOperator, Priority, Fixity)]
-    processImports _ Nothing visible = visible
-    processImports path (Just imports) visible =
+    processImports _ Nothing visible True = []
+    processImports _ Nothing visible False = visible
+    processImports path (Just imports) visible _ =
         filter (\(op,_,_) -> unwrapOperator op `elem` strippedImports) visible
       where
         strippedImports = concat $ strip . unlocated <$> imports
@@ -433,35 +437,78 @@ operator' :: Priority -> Fixity -> ParserIO T.Text
 operator' = kindOfOperator isNormalOp
 
 -- Parser for top-level definitions (types, classes, instances, let, etc.)
-topLevelDef :: ParserIO (TopLevelDef a)
-topLevelDef = operatorDefinition
+topLevelDef :: ParserIO (TopLevelDef ())
+topLevelDef = P.option () operatorDecl >>
+        (P.try globalLetDef <?> "let definition")
+    <|> (globalLetRecDef <?> "let-rec definition")
     -- TODO: implement
-    <|> P.try globalLetDef
-    <|> P.try globalLetRecDef
 
 -- Parser for top-level let-definitions
-globalLetDef :: ParserIO (TopLevelDef a)
-globalLetDef = keyword "let" *> (TopLevelLet . LetDef <$> letDefBody)
+globalLetDef :: ParserIO (TopLevelDef ())
+globalLetDef = keyword "let" *> (TopLevelLet . LetDef <$> definition)
 
 -- Parser for top-level let-rec-definitions
-globalLetRecDef :: ParserIO (TopLevelDef a)
-globalLetRecDef = undefined
+globalLetRecDef :: ParserIO (TopLevelDef ())
+globalLetRecDef = withPos $ \pos -> do
+    keyword "let-rec"
+    defs <- P.many definition
+    return . TopLevelLet $ LetRecDef defs pos
 
--- Parser for the definition following the 'let' keyword.
+-- Parser for the definition following the 'let' or 'let-rec' keywords.
 -- Consists of the pattern, type signature and the expression.
-letDefBody :: ParserIO (Definition a)
-letDefBody = undefined
+definition :: ParserIO (Definition ())
+definition = withPos $ \pos -> do
+    patterns <- P.some namedPattern
+    symbol ":"
+    sig <- P.optional typeSignature
+    symbol "="
+    body <- expression
+    -- TODO: desugar let f x = e into let f = fn x => e 
+    case desugar patterns sig body pos of
+        Left err  -> fail err
+        Right def -> return def
+  where
+    -- Function which turns function definitions into lambda definitions.
+    -- e.g. 'let f x := e' => 'let f := fn x => e'
+    -- Function patterns must have a variable as the leading pattern.
+    desugar [p] sig body pos = Right $ Definition p sig body pos
+    desugar (fun@(VarPattern (Identifier var) _ _):args) sig body pos =
+        Right $ Definition fun sig (lambdify args) pos
+      where
+        lambdify [p]    = Lambda p body (Just var) pos ()
+        lambdify (p:ps) = Lambda p (lambdify ps) (Just var) pos ()
+    desugar _ _ _ _ = 
+        Left "invalid function pattern (function name must be an variable)"
 
--- Parser for operator declaration and the following let or type definition. 
--- Every declaration must be followed by the operator definition.
-operatorDefinition :: ParserIO (TopLevelDef a)
-operatorDefinition = undefined
+-- Parser for operator declarations.
+operatorDecl :: ParserIO ()
+operatorDecl = do
+    P.try $ keyword "operator"
+    op <- customOperator <?> "infix identifier"
+    priority <- L.decimal
+    assertValidPriority priority
+    fixity <- operatorFixity
+    defineOperator (op, priority, fixity)
+  where
+    assertValidPriority :: Priority -> ParserIO ()
+    assertValidPriority priority =
+        when (priority < 1 || priority > 10) $
+            fail $ "priority out of range (got \"" 
+                ++ show priority 
+                ++ "\", expected 1..10"
+
+-- Parser for operators in operator declarations.
+customOperator :: ParserIO CustomOperator
+customOperator = ConstrOperator <$> constructorOperator
+             <|> VarOperator    <$> operator
+             <|> PrefixConstrOperator <$> surroundedBy "`" uppercaseName "`"
+             <|> PrefixVarOperator    <$> surroundedBy "`" lowercaseName "`"
 
 -- Parser for operator fixity in operator declarations.
 operatorFixity :: ParserIO Fixity
 operatorFixity = (keyword "left" $> LeftFix) 
             <|> (keyword "right" $> RightFix) 
-            <|> (keyword "none" $> NoneFix)
+            <|> (keyword "none"  $> NoneFix)
 
 -- Parser for identifiers that can be appear in the prefix position 
 -- (normal operators in brackets or variable names)
@@ -496,7 +543,7 @@ uppercaseName :: ParserIO T.Text
 uppercaseName = lexeme $ do
     name <- T.pack <$> (pure (:) <*> P.upperChar <*> P.many nameChar)
     when (name `elem` upperReserved) $
-        fail ("Keyword " ++ show name ++ " is not a valid identifier!")
+        fail ("unexpected keyword " ++ show name)
     return name
 
 -- Parser for lowercase identifiers (e.g. map)
@@ -504,7 +551,7 @@ lowercaseName :: ParserIO T.Text
 lowercaseName = lexeme $ do
     name <- T.pack <$> (pure (:) <*> P.lowerChar <*> P.many nameChar)
     when (name `elem` reserved) $
-        fail ("Keyword " ++ show name ++ " is not a valid identifier!")
+        fail ("unexpected keyword " ++ show name)
     return name
 
 -- Parser for operators starting with ':' except the ':' operator.
@@ -513,7 +560,7 @@ constructorOperator :: ParserIO T.Text
 constructorOperator = lexeme $ do
     op <- T.pack <$> (pure (:) <*> P.char ':' <*> P.some operatorCharOrColon)
     when (op `elem` reservedOperators) $
-        fail ("Operator " ++ show op ++ " is a reserved operator!")
+        fail ("unexpected reserved operator " ++ show op)
     return op
 
 -- Parser for operators that don't start with ':'.
@@ -521,7 +568,7 @@ operator :: ParserIO T.Text
 operator = lexeme $ do
     op <- T.pack <$> (pure (:) <*> operatorChar <*> P.many operatorCharOrColon)
     when (op `elem` reservedOperators) $
-        fail ("Operator " ++ show op ++ " is a reserved operator!")
+        fail ("unexpected reserved operator " ++ show op)
     return op
 
 -- Parser for a character that is allowed within non-constructor operators.
@@ -595,29 +642,22 @@ keyword kw = keywordParserIO <?> ("keyword " ++ show kw)
   where
     keywordParserIO = (lexeme . P.try) $ P.string kw *> P.notFollowedBy nameChar
 
+-- Parser for explicit type signatures.
+typeSignature :: ParserIO TypeSig
+typeSignature = undefined --TODO: implement
+
+-- Parser for expressions
+expression :: ParserIO (Expr ())
+expression = undefined -- TODO: implement
+
 -- Parser for literal expressions.
 primExpr :: ParserIO PrimExpr
 primExpr = lexeme $ (P.try float <?> "float literal")
-    <|> character
+    <|> (character <?> "character")
     <|> (integer <?> "integer literal")
-    <|> string
-    <|> (P.try boolean <?> "bool literal")
+    <|> (string <?> "string literal")
+    <|> P.try boolean
     <|> (unit <?> "()")
-
--- Parser for variable names. Only lowercase identifiers and operators within
--- parenthesis are valid names.
-{- varExpr :: ParserIO (Expr ())
-varExpr = withPos $ \pos -> do
-    var <- lowercaseName 
-        <|> surroundedBy "(" operator ")"
-    return $ Var (Identifier var) pos ()
-
--- Parser for constructor names as primitive expressions.
-constrExpr :: ParserIO (Expr ())
-constrExpr = withPos $ \pos -> do
-    constr <- constructorName
-    return $ Constructor constr pos ()
- -}
 
 -- Parser for floating point numbers.
 float :: ParserIO PrimExpr
@@ -849,8 +889,7 @@ parseProgram = do
             exitFailure
         Right program -> return program
 
--- Helper function used to test parsers. It runs the given parser
--- on some string.
+-- Helper function used to test parsers.
 testParser :: Show a => ParserIO a -> T.Text -> IO ()
 testParser parser input = do
     result <- parsingResult
