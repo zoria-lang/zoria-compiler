@@ -1,0 +1,42 @@
+module Empty {foo, bar, Baz{Foo,Bar}}
+
+# import Foo\Empty
+# import OtherEmpty {qwe} as Eeeee
+# import Test as T
+
+
+let-infix + 4 left
+let-infix - 4 left 
+let-infix * 3 left
+let-infix / 3 left
+let-infix ^ 2 right
+
+let _ := 2 + 2 * 2 - 4 ^ 10 / 7
+
+
+#:
+
+let zs := xs ++ ys
+
+
+let _ := x or True and False
+
+let-rec {
+    x := 20;
+    y := 30
+}
+
+
+# let (+) a b := _internal addInt (a,b)
+
+
+
+#:
+let x : Int = 42
+let y : Float = 3.14
+let foo := let x := 7 in foo
+:#
+
+
+
+:#

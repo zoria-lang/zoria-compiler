@@ -18,7 +18,7 @@ import Control.Monad (void, forM, when, mapM_)
 import Control.Applicative ((<|>))
 import Data.Functor (($>))
 import Data.List (find)
-import Data.Maybe (fromJust, isJust)
+import Data.Maybe (fromJust, isJust, catMaybes)
 import Data.Void (Void)
 import Utility (Position(..), findM)
 import GetOpt (Options(..), ModulePath(..), getOptions)
@@ -128,8 +128,12 @@ file path = do
             fileContents <- liftIO . T.readFile $ path
             result       <- lift $ P.runParserT (module' path) path fileContents
             -- TODO: handle errors with 'region'
-            handleError result
-        Just mod -> return mod
+            mod   <- handleError result
+            state <- lift get
+            lift $ put state { stateVisited = Map.insert path mod visited }
+            return mod
+        Just mod ->
+            return mod
   where
     -- Handler for errors from submodules
     handleError :: Either Errors (Module ()) -> ParserIO (Module ())
@@ -143,7 +147,7 @@ file path = do
         when (path `elem` pathStack) $
             fail $ "detected cyclic dependency: file " 
                 ++ show path 
-                ++ "was previously included in a module it depends on"
+                ++ " was previously included in a module it depends on"
             -- TODO: ^ handle it better and find the actual module name
 
 -- Parser for modules. The job of file parser is delegated here.
@@ -156,7 +160,12 @@ module' path = do
     withStack name path $ do
         rawImports  <- P.many $ located (import' <?> "module import")
         imports     <- forM rawImports importFile
-        definitions <- P.many $ topLevelDef
+
+        ops <- stateCurrentOps <$> lift get
+        debug $ show ops
+
+
+        definitions <- catMaybes <$> (P.many $ topLevelDef)
         skipWhitespace >> P.eof
         exportOperators exports -- at the end we update the operator table
         return $ Module (ModuleId [] name) path imports exports definitions
@@ -274,7 +283,7 @@ unwrapOperator (PrefixConstrOperator op) = op
 unwrapOperator (VarOperator op) = op
 unwrapOperator (PrefixVarOperator op) = op
 
--- Function which adds an operator declaration to the operator table.
+-- Function which adds an operator declaration to the local operator table.
 defineOperator :: (CustomOperator, Priority, Fixity) -> ParserIO ()
 defineOperator (op, priority, fixity) = do
     state @ ParserState { stateCurrentOps = visible } <- lift get
@@ -288,7 +297,7 @@ defineOperator (op, priority, fixity) = do
   where
     -- Assert that we are not overwritting some other custom operator.
     assertUndefined :: CustomOperator -> [CustomOperator] -> ParserIO ()
-    assertUndefined op ops = when (op `elem` ops) $ fail $ 
+    assertUndefined op ops = when (op `elem` ops) $ fail $
         "illegal redeclaration of the operator " ++ prettyPrintCustomOp op
 
 -- Perform some parsing computation inside a stack frame. On the stack we store
@@ -437,10 +446,10 @@ operator' :: Priority -> Fixity -> ParserIO T.Text
 operator' = kindOfOperator isNormalOp
 
 -- Parser for top-level definitions (types, classes, instances, let, etc.)
-topLevelDef :: ParserIO (TopLevelDef ())
-topLevelDef = P.option () operatorDecl >>
-        (TopLevelLet <$> letDef <?> "let definition")
-    <|> (TopLevelLet <$> letRecDef <?> "let-rec definition")
+topLevelDef :: ParserIO (Maybe (TopLevelDef ()))
+topLevelDef = (operatorDecl $> Nothing <?> "operator declaration")
+    <|> (Just . TopLevelLet <$> letDef <?> "let definition")
+    <|> (Just . TopLevelLet <$> letRecDef <?> "let-rec definition")
     -- TODO: implement
 
 -- Parser for top-level let-definitions
@@ -458,10 +467,10 @@ letRecDef = withPos $ \pos -> do
 -- Consists of the pattern, type signature and the expression.
 definition :: ParserIO (Definition ())
 definition = withPos $ \pos -> do
-    patterns <- P.some namedPattern
-    keyword ":"
+    patterns <- P.some (namedPattern <?> "pattern")
+    symbol ":"
     sig <- P.optional typeSignature <?> "type signature"
-    keyword "="
+    symbol "="
     body <- expression <?> "expression"
     case desugar patterns sig body pos of
         Left err  -> fail err
@@ -482,7 +491,7 @@ definition = withPos $ \pos -> do
 -- Parser for operator declarations.
 operatorDecl :: ParserIO ()
 operatorDecl = do
-    P.try $ keyword "operator"
+    P.try $ keyword "let-infix"
     op <- customOperator <?> "infix identifier"
     priority <- lexeme L.decimal <?> "operator precedence"
     fixity <- operatorFixity <?> "operator fixity (left, none or right)"
@@ -519,7 +528,8 @@ prefixIdentifier = lowercaseName
 reserved :: [T.Text]
 reserved = ["module", "import", "class", "instance", "let", "in", "with",
             "match", "case", "and", "or", "fn", "type", "alias", "let-rec",
-            "end", "if", "then", "else", "_external", "_internal", "λ"]
+            "end", "if", "then", "else", "_external", "_internal", "λ", 
+            "let-infix"]
 
 -- List of uppercase words that can not be used as identifiers.
 upperReserved :: [T.Text]
@@ -639,7 +649,7 @@ keyword kw = keywordParserIO <?> ("keyword " ++ show kw)
 -- Parser for 'let' keyword. Normal keyword parser won't suffice since
 -- 'let' can be followed by '-'.
 letKeyword :: ParserIO ()
-letKeyword = keyword "let" >> P.notFollowedBy (P.string "-rec")
+letKeyword = keyword "let" >> P.notFollowedBy (P.char '-')
 
 -- Parser for explicit type signatures.
 typeSignature :: ParserIO TypeSig
@@ -850,36 +860,36 @@ exprOperator priority fixity = P.label "infix operator" $
 opExpr :: Priority -> Fixity -> ParserIO (Expr ())
 opExpr 0 _ = application
 opExpr priority NoneFix = do
-    lhs <- nextPriorityExpr
+    lhs <- nextPriorityExpr <?> "expression"
     rhs <- P.optional $ pure (,)
-        <*> exprOperator priority NoneFix
-        <*> nextPriorityExpr
+        <*> (exprOperator priority NoneFix <?> "operator")
+        <*> (nextPriorityExpr <?> "expression")
     return $ case rhs of
-        Just (op, rhs) -> App op rhs ()
+        Just (op, rhs) -> App (App op lhs ()) rhs ()
         Nothing        -> lhs
   where
     nextPriorityExpr = opExpr priority RightFix
 opExpr priority RightFix = do
-    lhs <- opExpr priority LeftFix
+    lhs <- opExpr priority LeftFix <?> "expression"
     rhs <- P.optional $ pure (,)
-        <*> exprOperator priority RightFix
-        <*> opExpr priority RightFix
+        <*> (exprOperator priority RightFix <?> "operator")
+        <*> (opExpr priority RightFix <?> "expression")
     return $ case rhs of
-        Just (op, rhs) -> App op rhs ()
+        Just (op, rhs) -> App (App op lhs ()) rhs ()
         Nothing        -> lhs
 opExpr priority LeftFix = do
-    lhs <- nextPriorityExpr
+    lhs <- nextPriorityExpr <?> "expression"
     leftfixExprAux lhs
   where
     nextPriorityExpr = opExpr (priority - 1) NoneFix
     leftfixExprAux :: Expr () -> ParserIO (Expr ())
     leftfixExprAux acc = do
-        op <- P.optional $ exprOperator priority LeftFix
+        op <- (P.optional $ exprOperator priority LeftFix) <?> "operator"
         case op of
             Nothing -> return acc
             Just op -> do
-                rhs <- nextPriorityExpr
-                leftfixExprAux $ App acc rhs ()
+                rhs <- nextPriorityExpr <?> "expression"
+                leftfixExprAux $ App (App op acc ()) rhs ()
 
 -- Parser for function application. Function application can be treated like
 -- invisible leftfix operator with priority 0 (highest).
@@ -1259,6 +1269,11 @@ check p = P.hidden $ P.optional (P.try $ void p) >>= return . isJust
 -- Computation which extracts the command line options from the reader monad.
 getopt :: ParserIO Options
 getopt = lift . lift $ ask
+
+-- Prints a message with current parser position.
+debug :: String -> ParserIO ()
+debug str = withPos $ \(Position pos file) -> 
+    liftIO . putStrLn $ show file ++ " " ++ show pos ++ ": " ++ str
 
 -- Function used to simplyfy running the parser monad stack.
 -- It takes the parser to be run, file name (used for errors), input string,

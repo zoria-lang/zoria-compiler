@@ -1,0 +1,3 @@
+module Empty {(++)}
+
+let-infix ++ 4 left
