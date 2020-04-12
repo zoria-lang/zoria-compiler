@@ -1,9 +1,8 @@
 module Main where
 
 import GetOpt
-
+import Parser
+import Text.Megaparsec (errorBundlePretty)
 
 main :: IO ()
-main = do
-    options <- getOptions
-    print options
+main = parseProgram >>= putStrLn . show

@@ -439,20 +439,20 @@ operator' = kindOfOperator isNormalOp
 -- Parser for top-level definitions (types, classes, instances, let, etc.)
 topLevelDef :: ParserIO (TopLevelDef ())
 topLevelDef = P.option () operatorDecl >>
-        (P.try globalLetDef <?> "let definition")
-    <|> (globalLetRecDef <?> "let-rec definition")
+        (TopLevelLet <$> letDef <?> "let definition")
+    <|> (TopLevelLet <$> letRecDef <?> "let-rec definition")
     -- TODO: implement
 
 -- Parser for top-level let-definitions
-globalLetDef :: ParserIO (TopLevelDef ())
-globalLetDef = keyword "let" *> (TopLevelLet . LetDef <$> definition)
+letDef :: ParserIO (LetDef ())
+letDef = P.try letKeyword *> (LetDef <$> definition)
 
 -- Parser for top-level let-rec-definitions
-globalLetRecDef :: ParserIO (TopLevelDef ())
-globalLetRecDef = withPos $ \pos -> do
-    keyword "let-rec"
+letRecDef :: ParserIO (LetDef ())
+letRecDef = withPos $ \pos -> do
+    P.try (keyword "let-rec")
     defs <- P.many definition
-    return . TopLevelLet $ LetRecDef defs pos
+    return $ LetRecDef defs pos
 
 -- Parser for the definition following the 'let' or 'let-rec' keywords.
 -- Consists of the pattern, type signature and the expression.
@@ -516,19 +516,11 @@ prefixIdentifier :: ParserIO T.Text
 prefixIdentifier = lowercaseName 
                <|> (surroundedBy "(" operator ")")
 
--- Parser for identifiers that can be used in an infix way
--- (operators or identifiers surrounded by backticks)
-infixIdentifier :: ParserIO T.Text
-infixIdentifier = (P.try $ P.char '`' *> lowercaseName <* P.char '`')
-            <|> (P.char '`' *> uppercaseName <* P.char '`')
-            <|> operator
-            <|> constructorOperator
-
 -- List of lowercase words that can not be used as identifiers.
 reserved :: [T.Text]
 reserved = ["module", "import", "class", "instance", "let", "in", "with",
             "match", "case", "and", "or", "fn", "type", "alias", "let-rec",
-            "end", "if", "then", "else", "_external", "_internal"]
+            "end", "if", "then", "else", "_external", "_internal", "λ"]
 
 -- List of uppercase words that can not be used as identifiers.
 upperReserved :: [T.Text]
@@ -645,6 +637,11 @@ keyword kw = keywordParserIO <?> ("keyword " ++ show kw)
   where
     keywordParserIO = (lexeme . P.try) $ P.string kw *> P.notFollowedBy nameChar
 
+-- Parser for 'let' keyword. Normal keyword parser won't suffice since
+-- 'let' can be followed by '-'.
+letKeyword :: ParserIO ()
+letKeyword = keyword "let" >> P.notFollowedBy (P.string "-rec")
+
 -- Parser for explicit type signatures.
 typeSignature :: ParserIO TypeSig
 typeSignature = do
@@ -731,16 +728,282 @@ primType = keyword "Int" $> IntT
        <|> P.try (keyword "Char") $> CharT
        <|> keyword "CPtr" $> CPtrT
 
--- Parser for expressions
+-- Parser for expressions.
 expression :: ParserIO (Expr ())
-expression = undefined -- TODO: implement
+expression = letIn
+         <|> conditionalExpr
+         <|> patternMatching 
+         <|> lambdaExpr
+         <|> annotatedExpr
+
+-- Parser for 'let ... in' and 'let-rec ... in' expressions.
+letIn :: ParserIO (Expr ())
+letIn = do
+    def <- letDef <|> letRecDef
+    keyword "in"
+    expr <- expression
+    return $ LetIn def expr ()
+
+-- Parser for 'if ... then ... else' expressions.
+conditionalExpr :: ParserIO (Expr ())
+conditionalExpr = withPos $ \pos -> do
+    P.try $ keyword "if"
+    condition <- annotatedExpr
+    keyword "then"
+    consequence <- annotatedExpr
+    keyword "else"
+    alternative <- annotatedExpr
+    return $ If condition consequence alternative pos ()
+
+-- Parser for 'match ... with case ...' expressions
+patternMatching :: ParserIO (Expr ())
+patternMatching = withPos $ \pos -> do
+    P.try $ keyword "match"
+    expr <- expression
+    keyword "with"
+    cases <- P.some matchCase
+    return $ Match expr cases pos ()
+
+-- Parser for a single 'case' pattern matching clause.
+matchCase :: ParserIO (MatchCase ())
+matchCase = do
+    P.try $ keyword "case"
+    p <- pattern
+    keyword "=>"
+    expr <- expression
+    return $ MatchCase p expr
+
+-- Parser for lambda expressions (e.g. fn x => x)
+lambdaExpr :: ParserIO (Expr ())
+lambdaExpr = withPos $ \pos -> do
+    P.try $ (keyword "fn" <|> keyword "λ")
+    args <- P.some pattern
+    symbol "=>"
+    body <- expression
+    return $ desugar args body pos
+  where
+    -- Function that desugars multi-parameter lambdas into unary lambdas
+    desugar :: [Pattern ()] -> Expr () -> Position -> Expr ()
+    desugar [arg] expr pos = Lambda arg expr Nothing pos ()
+    desugar (arg:args) expr pos = 
+        Lambda arg (desugar args expr pos) Nothing pos ()
+
+-- Parser for expressions with explicit type sygnatures or for expressions
+-- with higher precedence.
+annotatedExpr :: ParserIO (Expr ())
+annotatedExpr = withPos $ \pos -> do
+    expr <- logicalOr
+    sig  <- P.optional $ (P.try $ symbol ":") >> typeSignature
+    return $ case sig of
+        Nothing  -> expr
+        Just sig -> AnnotatedExpr expr sig pos ()
+
+-- Parser for expressions with precedence at least the same as the precedence
+-- of 'or' expressions.
+logicalOr :: ParserIO (Expr ())
+logicalOr = do
+    lhs <- logicalAnd
+    logicalOrAux lhs
+  where
+    logicalOrAux :: Expr () -> ParserIO (Expr ())
+    logicalOrAux acc = withPos $ \pos -> do
+        hasOp <- check $ symbol "or"
+        if not hasOp
+            then return acc
+            else do 
+                rhs <- logicalAnd
+                logicalOrAux $ Or acc rhs pos ()
+
+-- Parser for expressions with precedence at least as high as 'and' expressions.
+logicalAnd :: ParserIO (Expr ())
+logicalAnd = do
+    lhs <- opExpr 10 NoneFix
+    logicalAndAux lhs
+  where
+    logicalAndAux :: Expr () -> ParserIO (Expr ())
+    logicalAndAux acc = withPos $ \pos -> do
+        hasOp <- check $ symbol "and"
+        if not hasOp
+            then return acc
+            else do
+                rhs <- opExpr 10 NoneFix
+                logicalAndAux $ And acc rhs pos ()
+
+-- Parser for any kind of infix operator which returns the operator
+-- as either Var or Constructor expression.
+exprOperator :: Priority -> Fixity -> ParserIO (Expr ())
+exprOperator = undefined
+
+-- Parser for expressions with (custom) operators.
+-- There is a lot of repetition but it's not possible to abstract into a
+-- single definition since there are subtle differences between clauses.
+opExpr :: Priority -> Fixity -> ParserIO (Expr ())
+opExpr 0 _ = application
+opExpr priority NoneFix = do
+    lhs <- nextPriorityExpr
+    rhs <- P.optional $ pure (,)
+        <*> exprOperator priority NoneFix
+        <*> nextPriorityExpr
+    return $ case rhs of
+        Just (op, rhs) -> App op rhs ()
+        Nothing        -> lhs
+  where
+    nextPriorityExpr = opExpr priority RightFix
+opExpr priority RightFix = do
+    lhs <- opExpr priority LeftFix
+    rhs <- P.optional $ pure (,)
+        <*> exprOperator priority RightFix
+        <*> opExpr priority RightFix
+    return $ case rhs of
+        Just (op, rhs) -> App op rhs ()
+        Nothing        -> lhs
+opExpr priority LeftFix = do
+    lhs <- nextPriorityExpr
+    leftfixExprAux lhs
+  where
+    nextPriorityExpr = opExpr (priority - 1) NoneFix
+    leftfixExprAux :: Expr () -> ParserIO (Expr ())
+    leftfixExprAux acc = do
+        op <- P.optional $ exprOperator priority LeftFix
+        case op of
+            Nothing -> return acc
+            Just op -> do
+                rhs <- nextPriorityExpr
+                leftfixExprAux $ App acc rhs ()
+
+-- Parser for function application. Function application can be treated like
+-- invisible leftfix operator with priority 0 (highest).
+application :: ParserIO (Expr ())
+application = do
+    head <- atomicExpr
+    args  <- P.many atomicExpr
+    return $ case args of
+        [] -> head
+        _  -> foldl applify head args
+  where
+    applify :: Expr () -> Expr () -> Expr ()
+    applify funct arg = App funct arg ()
+
+-- Parser for expressions with the highest precedence (literals / bracketed
+-- expressions)
+atomicExpr :: ParserIO (Expr ())
+atomicExpr = withPos $ \pos -> 
+    ((\e -> Primitive e pos ()) <$> P.try primExpr)
+    <|> internal
+    <|> external
+    <|> stringExpr
+    <|> P.try listLit
+    <|> arrayLit
+    <|> blockExpr
+    <|> qualifiedName
+    <|> varExpr
+    <|> constructorExpr
+    <|> P.try (P.between (symbol "(") (symbol ")") expression)
+    <|> tupleExpr
+
+{- -- Parser for block expressions.
+blockExpr :: ParserIO (Expr ())
+blockExpr = do
+    symbol "{"
+    
+    symbol "}"
+    return undefined
+ -}
+-- Parsers for names with explicit namespace (e.g. Foo\bar, Bar\Foo, Foo\(++))
+qualifiedName :: ParserIO (Expr ())
+qualifiedName = withPos $ \pos -> do
+    namespace <- ModName <$> (P.try $ uppercaseName <* P.char '\\')
+    P.try (qualifiedConstructor namespace pos) <|> qualifiedVar namespace pos
+  where
+    qualifiedConstructor :: ModName -> Position -> ParserIO (Expr ())
+    qualifiedConstructor mod pos = do 
+        name <- constructorName
+        return $ QualifiedConstructor mod name pos ()
+    qualifiedVar :: ModName -> Position -> ParserIO (Expr ())
+    qualifiedVar mod pos = do
+        name <- Identifier <$> prefixIdentifier
+        return $ QualifiedVar mod name pos ()
+
+-- Parser for identifiers (e.g. x, (++))
+varExpr :: ParserIO (Expr ())
+varExpr = withPos $ \pos -> do
+    var <- Identifier <$> prefixIdentifier
+    return $ Var var pos ()
+
+-- Parser for identifiers that are constructors (e.g. Nothing, (::))
+constructorExpr :: ParserIO (Expr ())
+constructorExpr = withPos $ \pos -> do
+    constr <- constructorName
+    return $ Constructor constr pos ()
+
+-- Parser for tuples of expressions (e.g. (2,'1',"3",7.0))
+tupleExpr :: ParserIO (Expr ())
+tupleExpr = withPos $ \pos -> do
+    elems <- separatedList "(" ")" expression ","
+    return $ Tuple elems pos ()
+
+-- Parser for array literals (e.g. [<1,2,3>])
+arrayLit :: ParserIO (Expr ())
+arrayLit = withPos $ \pos -> do
+    elems <- separatedList "[<" ">]" expression ","
+    return $ Array elems pos ()
+
+-- Parser for both normal and format strings.
+stringExpr :: ParserIO (Expr ())
+stringExpr = P.try normalString <|> formatString
+  where
+    normalString :: ParserIO (Expr ())
+    normalString = withPos $ \pos -> do
+        str <- string
+        return $ Primitive (StringLit str) pos ()
+    formatString :: ParserIO (Expr ())
+    formatString = withPos $ \pos -> do
+        P.char '"'
+        chunks <- P.many (inlineExpr <|> stringChunk)
+        P.char '"'
+        return $ FormatString chunks pos ()
+      where
+        stringChunk :: ParserIO (FormatExpr ())
+        stringChunk = FmtStr . T.pack <$> P.some fmtStrChar
+          where
+            fmtStrChar :: ParserIO Char
+            fmtStrChar = (P.try $ P.string "\\{" $> '{') <|> L.charLiteral
+        inlineExpr :: ParserIO (FormatExpr ())
+        inlineExpr = FmtExpr <$> 
+            (P.try (symbol "{") *> expression <* P.char '}')
+
+-- Parser for list literal expressions. Note, that they are just a syntax
+-- sugar for :: and [] constructors.
+listLit :: ParserIO (Expr ())
+listLit = withPos $ \pos -> do
+    xs <- separatedList "[" "]" expression ","
+    return $ foldr (applify pos) (Constructor nilConstructor pos ()) xs
+  where
+    applify :: Position -> Expr () -> Expr () -> Expr ()
+    applify pos x xs = 
+        App (App (Constructor consConstructor pos ()) x ()) xs ()
+
+-- Parser for the '_internal' built-in names.
+internal :: ParserIO (Expr ())
+internal = withPos $ \pos -> do
+    P.try $ keyword "_internal"
+    id <- Identifier <$> lowercaseName
+    return $ Internal id pos ()
+
+-- Parser for the '_external' FfI calls.
+external :: ParserIO (Expr ())
+external = withPos $ \pos -> do
+    P.try $ keyword "_external"
+    path <- T.unpack <$> string
+    name <- string
+    return $ External path name pos ()
 
 -- Parser for literal expressions.
 primExpr :: ParserIO PrimExpr
 primExpr = lexeme $ (P.try float <?> "float literal")
     <|> (character <?> "character")
     <|> (integer <?> "integer literal")
-    <|> (string <?> "string literal")
+    <|> (StringLit <$> string <?> "string literal")
     <|> P.try boolean
     <|> (unit <?> "()")
 
@@ -771,12 +1034,18 @@ integer = do
         overflowError int = 
             "overflowing integer literal '" ++ show int ++ "'"
 
--- Parser for string literals.
--- TODO: parse format strings.
-string :: ParserIO PrimExpr
-string = P.char '"' 
-    >> (T.pack <$> P.manyTill L.charLiteral (P.char '"')) 
-    >>= return . StringLit
+-- Parser for string literals. Rejects format strings
+string :: ParserIO T.Text
+string = lexeme $ P.char '"' >> (T.pack <$> P.manyTill stringChar (P.char '"')) 
+
+-- Parser for characters that can appear inside normal (unformatted) strings.
+-- Bare '{' is forbidden and has to be escaped with '\'.
+stringChar :: ParserIO Char
+stringChar = (escapedFormat <|> L.charLiteral) <?> "character"
+  where
+    escapedFormat :: ParserIO Char
+    escapedFormat = (P.try (P.char '{') >> fail "unescaped format bracket!")
+                <|> (P.string "\\{" $> '{')
 
 -- Parser for character literals.
 character :: ParserIO PrimExpr
@@ -825,7 +1094,7 @@ infixConstructorPattern priority RightFix = withPos $ \pos -> do
         Nothing -> lhs
 infixConstructorPattern priority LeftFix = withPos $ \pos -> do
     lhs <- infixConstructorPattern (priority - 1) NoneFix
-    replacePos pos <$> leftfixConstructorPattern priority lhs
+    leftfixConstructorPattern priority lhs
   where
     -- Tail recursive parser for left-recursion elimination.
     leftfixConstructorPattern :: Priority -> Pattern () -> ParserIO (Pattern ())
@@ -837,12 +1106,6 @@ infixConstructorPattern priority LeftFix = withPos $ \pos -> do
                 rhs <- infixConstructorPattern (priority - 1) NoneFix
                 leftfixConstructorPattern priority $
                     ConstructorPattern (ConstructorName op) [acc, rhs] pos ()
-    -- Function that replaces the position stored within the pattern because
-    -- the position from leftfixConstructorPattern is not valid for the
-    -- first pattern in the sequence
-    replacePos :: Position -> Pattern () -> Pattern ()
-    replacePos pos (ConstructorPattern name args _ _) = 
-        ConstructorPattern name args pos ()
 
 -- Prefix application of a constructor (e.g. Just 42, (::) x xs)
 prefixConstructorPattern :: ParserIO (Pattern ())
@@ -870,9 +1133,9 @@ listLiteralPattern = withPos $ \pos -> do
     return $ foldPatterns ps pos
   where
     foldPatterns :: [Pattern ()] -> Position -> Pattern ()
-    foldPatterns [] pos = ConstructorPattern (ConstructorName "[]") [] pos ()
+    foldPatterns [] pos = ConstructorPattern nilConstructor [] pos ()
     foldPatterns (p:ps) pos = 
-        ConstructorPattern (ConstructorName "::") [p, ps'] pos ()
+        ConstructorPattern consConstructor [p, ps'] pos ()
       where
         ps' = foldPatterns ps pos
 
@@ -909,6 +1172,12 @@ literalPattern = withPos $ \pos -> do
     expr <- primExpr
     return $ ConstPattern expr pos ()
 
+nilConstructor :: ConstructorName
+nilConstructor = ConstructorName "[]"
+
+consConstructor :: ConstructorName
+consConstructor = ConstructorName "::"
+
 -- Parser combinator that lets you easily extract the current file position.
 -- The argument is a function which takes a position and as a result returns
 -- some parser. The result is a parser instrumented with position checking.
@@ -939,6 +1208,12 @@ lexeme = L.lexeme skipWhitespace
 -- and the trailing space.
 symbol :: T.Text -> ParserIO T.Text
 symbol = L.symbol skipWhitespace
+
+-- Parser combinator that creates a parser, which returns True if the given
+-- parser matches the input (and then consumes it), or False otherwise
+-- (then the output remains unconsumed)
+check :: ParserIO a -> ParserIO Bool
+check p = P.optional (P.try $ void p) >>= return . isJust
 
 -- Computation which extracts the command line options from the reader monad.
 getopt :: ParserIO Options
