@@ -8,7 +8,7 @@ data Position = Position
     { posOffset :: !Int
     , posFile   :: !FilePath
     }
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 
 findM :: (Traversable t, Monad m) => (a -> m Bool) -> t a -> m (Maybe a)

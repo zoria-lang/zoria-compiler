@@ -3,15 +3,15 @@ module Syntax where
 import qualified Data.Text as T
 import Utility (Position)
 
-newtype Identifier = Identifier T.Text deriving Show
+newtype Identifier = Identifier T.Text deriving (Show, Eq, Ord)
 
-newtype TypeVar = TypeVar T.Text deriving Show
+newtype TypeVar = TypeVar T.Text deriving (Show, Eq, Ord)
 
-newtype ConstructorName = ConstructorName T.Text deriving Show
+newtype ConstructorName = ConstructorName T.Text deriving (Show, Eq, Ord)
 
-newtype TypeName = TypeName T.Text deriving Show
+newtype TypeName = TypeName T.Text deriving (Show, Eq, Ord)
 
-newtype ModName = ModName T.Text deriving Show
+newtype ModName = ModName T.Text deriving (Show, Eq, Ord)
 
 data Located a = Located
     { location  :: Position
@@ -28,7 +28,7 @@ data ModuleId = ModuleId
     { modulePrefix :: [ModName]
     , moduleName   :: ModName
     }
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data Module a = Module 
     { moduleId      :: ModuleId
@@ -53,7 +53,7 @@ data ImportedValue
     -- ^ imported variable (e.g. '(>>=)', 'map')
     | ImportedType TypeName (Maybe [ConstructorName])
     -- ^ type and constructor import (e.g. Maybe(Nothing), Either(), Map(..))
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data TopLevelDef a
     = TopLevelLet (LetDef a)
@@ -63,12 +63,20 @@ data TopLevelDef a
     | InstanceDef (Instance a)
   deriving Show
 
-data LetDef a = LetDef
-    { letPattern :: LetPattern a
+data Definition a = Definition
+    { letPattern :: Pattern a
     , letTypeSig :: Maybe TypeSig
     , letExpr    :: Expr a
     , letLoc     :: Position
     }
+  deriving Show
+
+data LetDef a
+    = LetDef (Definition a)
+    -- ^ single non-recursive definition 
+    | LetRecDef [Definition a] Position
+    -- ^ a set of mutually recursive definitions.
+    --   contains the position of 'let-rec' keyword
   deriving Show
 
 data TAlias = TAlias
@@ -109,29 +117,22 @@ data Constraint = Constraint
     { constraintName  :: TypeName
     , constraintParam :: TypeVar
     }
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data Instance a = Instance
-    { instanceClass   :: TypeName
-    , instanceType    :: TypeSig
-    , instanceMembers :: [LetDef a]
-    , instanceLoc     :: Position
+    { instanceClass       :: TypeName
+    , instanceType        :: TypeSig
+    , instanceMembers     :: [Definition a]
+    , instanceLoc         :: Position
+    , instanceConstraints :: [Constraint]
     }
-  deriving Show
-
-data LetPattern a
-    = FuncPattern 
-        { letFuncName :: Identifier
-        , letFuncArgs :: [Pattern a]
-        }
-    | LetPattern (Pattern a)
   deriving Show
 
 data TypeSig = TypeSig
     { typeSigConstraints :: [Constraint]
     , typeSig            :: Type
     }
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data PrimType
     = IntT
@@ -141,23 +142,23 @@ data PrimType
     | BoolT
     | UnitT
     | CPtrT
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data TypeCase
     = TypeCaseRecord ConstructorName RecordType Position
     -- ^ constructor of a record
     | TypeCase ConstructorName [TypeSig] Position
     -- ^ normal constructor (e.g. 'Just a')
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 
-newtype RecordType = RecordType [RecordField] deriving Show
+newtype RecordType = RecordType [RecordField] deriving (Show, Eq, Ord)
 
 data RecordField = RecordField
     { recordFieldName :: Identifier
     , recordFieldType :: TypeSig
     }
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data KindSig
     = TypeKind
@@ -183,7 +184,7 @@ data Type
     -- ^ tuple of types (e.g. '(Int, a, Float)')
     | ArrayType Type
     -- ^ array of elements of some type (e.g '[>Int<]', [>[>a<]<])
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data PrimExpr
     = IntLit Int
@@ -203,9 +204,13 @@ data PrimExpr
 data Expr a
     = Primitive PrimExpr Position a
     | Var Identifier Position a
-    -- ^ an identifier
-    | ScopedName ModuleId Identifier Position a
-    -- ^ name from a module (e.g. `Foo.Bar.x`)
+    -- ^ an identifier (e.g. map, (++))
+    | Constructor ConstructorName Position a
+    -- ^ a constructor (e.g. Just, [], ::, Nothing)
+    | QualifiedVar ModName Identifier Position a
+    -- ^ an explicitly qualified identifier (e.g. Foo\bar)
+    | QualifiedConstructor ModName ConstructorName Position a
+    -- ^ an explicitly qualified constructor (e.g. Foo\Nothing)
     | And (Expr a) (Expr a) Position a
     -- ^ 'and' boolean operator with its left and right operands
     | Or (Expr a) (Expr a) Position a
@@ -216,10 +221,8 @@ data Expr a
     -- ^ list of expressions to be evaluated in order
     | LetIn (LetDef a) (Expr a) a
     -- ^ local definition. Binds only in the Expr following it. Does not
-    --   store Position as it is stored both in LetDef and (maybe) in Expr
-    | MultiLetIn [LetDef a] (Expr a) a
-    -- ^ multiple mutually recursive local definitions.
-    | Lambda [Pattern a] (Expr a) (Maybe Identifier) Position a
+    --   store Position as it is stored both in Definition and (maybe) in Expr
+    | Lambda (Pattern a) (Expr a) (Maybe T.Text) Position a
     -- ^ lambda expression with the list of bindings (patterns) and
     --   the expression to evaluate upon the function call.
     --   May remember the name if it was defined in 'let'-definiiton.
@@ -233,7 +236,7 @@ data Expr a
     | Match (Expr a) [MatchCase a] Position a
     -- ^ pattern matching of Expr with a list of patterns. First matching
     --   pattern is choosen.
-    | Extern FilePath T.Text Position a
+    | External FilePath T.Text Position a
     -- ^ used to import foreign functions from shared libraries.
     | Internal Identifier Position a
     -- ^ built-in compiler value.
