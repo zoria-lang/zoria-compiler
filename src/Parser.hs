@@ -451,7 +451,7 @@ letDef = P.try letKeyword *> (LetDef <$> definition)
 letRecDef :: ParserIO (LetDef ())
 letRecDef = withPos $ \pos -> do
     P.try (keyword "let-rec")
-    defs <- P.many definition
+    defs <- (pure <$> definition) <|> (separatedList "{" "}" definition ";")
     return $ LetRecDef defs pos
 
 -- Parser for the definition following the 'let' or 'let-rec' keywords.
@@ -459,11 +459,10 @@ letRecDef = withPos $ \pos -> do
 definition :: ParserIO (Definition ())
 definition = withPos $ \pos -> do
     patterns <- P.some namedPattern
-    symbol ":"
-    sig <- P.optional typeSignature
-    symbol "="
-    body <- expression
-    -- TODO: desugar let f x = e into let f = fn x => e 
+    keyword ":"
+    sig <- P.optional typeSignature <?> "type signature"
+    keyword "="
+    body <- expression <?> "expression"
     case desugar patterns sig body pos of
         Left err  -> fail err
         Right def -> return def
@@ -730,7 +729,8 @@ primType = keyword "Int" $> IntT
 
 -- Parser for expressions.
 expression :: ParserIO (Expr ())
-expression = letIn
+expression = P.label "expression" $ 
+             letIn
          <|> conditionalExpr
          <|> patternMatching 
          <|> lambdaExpr
@@ -741,7 +741,7 @@ letIn :: ParserIO (Expr ())
 letIn = do
     def <- letDef <|> letRecDef
     keyword "in"
-    expr <- expression
+    expr <- expression <?> "expression"
     return $ LetIn def expr ()
 
 -- Parser for 'if ... then ... else' expressions.
@@ -750,16 +750,16 @@ conditionalExpr = withPos $ \pos -> do
     P.try $ keyword "if"
     condition <- annotatedExpr
     keyword "then"
-    consequence <- annotatedExpr
+    consequence <- expression
     keyword "else"
-    alternative <- annotatedExpr
+    alternative <- expression
     return $ If condition consequence alternative pos ()
 
 -- Parser for 'match ... with case ...' expressions
 patternMatching :: ParserIO (Expr ())
 patternMatching = withPos $ \pos -> do
     P.try $ keyword "match"
-    expr <- expression
+    expr <- annotatedExpr
     keyword "with"
     cases <- P.some matchCase
     return $ Match expr cases pos ()
@@ -768,18 +768,18 @@ patternMatching = withPos $ \pos -> do
 matchCase :: ParserIO (MatchCase ())
 matchCase = do
     P.try $ keyword "case"
-    p <- pattern
+    p <- pattern <?> "pattern"
     keyword "=>"
-    expr <- expression
+    expr <- expression <?> "expression"
     return $ MatchCase p expr
 
 -- Parser for lambda expressions (e.g. fn x => x)
 lambdaExpr :: ParserIO (Expr ())
 lambdaExpr = withPos $ \pos -> do
     P.try $ (keyword "fn" <|> keyword "λ")
-    args <- P.some pattern
+    args <- P.some pattern <?> "argument patterns"
     symbol "=>"
-    body <- expression
+    body <- expression <?> "body expression"
     return $ desugar args body pos
   where
     -- Function that desugars multi-parameter lambdas into unary lambdas
@@ -792,8 +792,8 @@ lambdaExpr = withPos $ \pos -> do
 -- with higher precedence.
 annotatedExpr :: ParserIO (Expr ())
 annotatedExpr = withPos $ \pos -> do
-    expr <- logicalOr
-    sig  <- P.optional $ (P.try $ symbol ":") >> typeSignature
+    expr <- logicalOr <?> "expression"
+    sig  <- P.hidden $ P.optional $ (P.try $ symbol ":") >> typeSignature
     return $ case sig of
         Nothing  -> expr
         Just sig -> AnnotatedExpr expr sig pos ()
@@ -811,7 +811,7 @@ logicalOr = do
         if not hasOp
             then return acc
             else do 
-                rhs <- logicalAnd
+                rhs <- logicalAnd <?> "expression"
                 logicalOrAux $ Or acc rhs pos ()
 
 -- Parser for expressions with precedence at least as high as 'and' expressions.
@@ -826,13 +826,23 @@ logicalAnd = do
         if not hasOp
             then return acc
             else do
-                rhs <- opExpr 10 NoneFix
+                rhs <- opExpr 10 NoneFix <?> "expression"
                 logicalAndAux $ And acc rhs pos ()
 
 -- Parser for any kind of infix operator which returns the operator
 -- as either Var or Constructor expression.
 exprOperator :: Priority -> Fixity -> ParserIO (Expr ())
-exprOperator = undefined
+exprOperator priority fixity = P.label "infix operator" $
+    P.try constrOp <|> normalOp
+  where
+    normalOp :: ParserIO (Expr ())
+    normalOp = withPos $ \pos -> do
+        op <- kindOfOperator isNormalOp priority fixity
+        return $ Var (Identifier op) pos ()
+    constrOp :: ParserIO (Expr ())
+    constrOp = withPos $ \pos -> do
+        op <- kindOfOperator isConstructorOp priority fixity
+        return $ Constructor (ConstructorName op) pos ()
 
 -- Parser for expressions with (custom) operators.
 -- There is a lot of repetition but it's not possible to abstract into a
@@ -875,8 +885,8 @@ opExpr priority LeftFix = do
 -- invisible leftfix operator with priority 0 (highest).
 application :: ParserIO (Expr ())
 application = do
-    head <- atomicExpr
-    args  <- P.many atomicExpr
+    head <- atomicExpr <?> "expression"
+    args  <- P.many atomicExpr <?> "argument expressions"
     return $ case args of
         [] -> head
         _  -> foldl applify head args
@@ -895,20 +905,46 @@ atomicExpr = withPos $ \pos ->
     <|> P.try listLit
     <|> arrayLit
     <|> blockExpr
-    <|> qualifiedName
-    <|> varExpr
-    <|> constructorExpr
+    <|> P.try qualifiedName
+    <|> P.try varExpr
+    <|> P.try constructorExpr
     <|> P.try (P.between (symbol "(") (symbol ")") expression)
     <|> tupleExpr
 
-{- -- Parser for block expressions.
+-- Used by blockExpr parser.
+data BlockElem
+    = BlockLet (LetDef ()) Position
+    | BlockExpr (Expr ()) Position
+
+-- Parser for block expressions.
 blockExpr :: ParserIO (Expr ())
-blockExpr = do
+blockExpr = withPos $ \pos -> do
     symbol "{"
-    
+    exprs <- P.many $ blockLet <* symbol ";" 
+          <|> P.try (blockExpr <* symbol ";")
+    final <- withPos $ \pos -> P.option (implicitUnit pos) (P.try blockExpr)
     symbol "}"
-    return undefined
- -}
+    return $ Block (desugar $ exprs ++ [final]) pos ()
+  where
+    -- Parser for block let definitions.
+    blockLet :: ParserIO BlockElem
+    blockLet = withPos $ \pos -> 
+        (flip BlockLet pos) <$> (letDef <|> letRecDef) <?> "let definition"
+    -- Parser for block expressions wrapped in the BlockElem type.
+    blockExpr :: ParserIO BlockElem
+    blockExpr = withPos $ \pos -> 
+        (flip BlockExpr pos) <$> expression <?> "expression"
+    -- Impliit unit placed after the final trailing semicolon in the block.
+    implicitUnit :: Position -> BlockElem
+    implicitUnit pos = BlockExpr (Primitive UnitLit pos ()) pos
+    -- Function that turns a linear list of expressions into a proper tree.
+    desugar :: [BlockElem] -> [Expr ()]
+    desugar [] = []
+    desugar ((BlockLet def pos):exprs) = [LetIn def subBlock ()]
+      where
+        subBlock = Block (desugar exprs) pos ()
+    desugar ((BlockExpr expr pos):exprs) = expr : desugar exprs
+
 -- Parsers for names with explicit namespace (e.g. Foo\bar, Bar\Foo, Foo\(++))
 qualifiedName :: ParserIO (Expr ())
 qualifiedName = withPos $ \pos -> do
@@ -950,27 +986,28 @@ arrayLit = withPos $ \pos -> do
 
 -- Parser for both normal and format strings.
 stringExpr :: ParserIO (Expr ())
-stringExpr = P.try normalString <|> formatString
+stringExpr = withPos $ \pos -> unwrap pos . filterEmpty <$> formatString 
   where
-    normalString :: ParserIO (Expr ())
-    normalString = withPos $ \pos -> do
-        str <- string
-        return $ Primitive (StringLit str) pos ()
-    formatString :: ParserIO (Expr ())
-    formatString = withPos $ \pos -> do
-        P.char '"'
-        chunks <- P.many (inlineExpr <|> stringChunk)
-        P.char '"'
-        return $ FormatString chunks pos ()
+    unwrap :: Position -> [FormatExpr ()] -> Expr ()
+    unwrap pos [] = Primitive (StringLit "") pos ()
+    unwrap pos [FmtStr str] = Primitive (StringLit str) pos ()
+    unwrap pos chunks = FormatString chunks pos ()
+    formatString :: ParserIO [FormatExpr ()]
+    formatString = 
+        P.char '"' *> P.some (inlineExpr <|> stringChunk) <* symbol "\""
+    stringChunk :: ParserIO (FormatExpr ())
+    stringChunk = FmtStr . T.pack <$> P.some chunkChar
+    chunkChar :: ParserIO Char
+    chunkChar = 
+        P.lookAhead (P.satisfy (\c -> c /= '{' && c /= '"')) *> L.charLiteral
+    inlineExpr :: ParserIO (FormatExpr ())
+    inlineExpr = 
+        FmtExpr <$> (symbol "{" *> (expression <?> "expression") <* P.char '}')
+    filterEmpty :: [FormatExpr ()] -> [FormatExpr ()]
+    filterEmpty = filter notEmptyStr
       where
-        stringChunk :: ParserIO (FormatExpr ())
-        stringChunk = FmtStr . T.pack <$> P.some fmtStrChar
-          where
-            fmtStrChar :: ParserIO Char
-            fmtStrChar = (P.try $ P.string "\\{" $> '{') <|> L.charLiteral
-        inlineExpr :: ParserIO (FormatExpr ())
-        inlineExpr = FmtExpr <$> 
-            (P.try (symbol "{") *> expression <* P.char '}')
+        notEmptyStr (FmtStr "") = False
+        notEmptyStr _           = True
 
 -- Parser for list literal expressions. Note, that they are just a syntax
 -- sugar for :: and [] constructors.
@@ -1037,6 +1074,10 @@ integer = do
 -- Parser for string literals. Rejects format strings
 string :: ParserIO T.Text
 string = lexeme $ P.char '"' >> (T.pack <$> P.manyTill stringChar (P.char '"')) 
+
+-- Parser for the '\{' character
+escapedBracket :: ParserIO Char
+escapedBracket = P.hidden $ (P.try $ P.string "\\{") $> '{'
 
 -- Parser for characters that can appear inside normal (unformatted) strings.
 -- Bare '{' is forbidden and has to be escaped with '\'.
@@ -1213,7 +1254,7 @@ symbol = L.symbol skipWhitespace
 -- parser matches the input (and then consumes it), or False otherwise
 -- (then the output remains unconsumed)
 check :: ParserIO a -> ParserIO Bool
-check p = P.optional (P.try $ void p) >>= return . isJust
+check p = P.hidden $ P.optional (P.try $ void p) >>= return . isJust
 
 -- Computation which extracts the command line options from the reader monad.
 getopt :: ParserIO Options
