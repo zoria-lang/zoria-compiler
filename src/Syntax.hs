@@ -63,12 +63,20 @@ data TopLevelDef a
     | InstanceDef (Instance a)
   deriving Show
 
-data LetDef a = LetDef
-    { letPattern :: LetPattern a
+data Definition a = Definition
+    { letPattern :: Pattern a
     , letTypeSig :: Maybe TypeSig
     , letExpr    :: Expr a
     , letLoc     :: Position
     }
+  deriving Show
+
+data LetDef a
+    = LetDef (Definition a)
+    -- ^ single non-recursive definition 
+    | LetRecDef [Definition a] Position
+    -- ^ a set of mutually recursive definitions.
+    --   contains the position of 'let-rec' keyword
   deriving Show
 
 data TAlias = TAlias
@@ -112,19 +120,12 @@ data Constraint = Constraint
   deriving Show
 
 data Instance a = Instance
-    { instanceClass   :: TypeName
-    , instanceType    :: TypeSig
-    , instanceMembers :: [LetDef a]
-    , instanceLoc     :: Position
+    { instanceClass       :: TypeName
+    , instanceType        :: TypeSig
+    , instanceMembers     :: [Definition a]
+    , instanceLoc         :: Position
+    , instanceConstraints :: [Constraint]
     }
-  deriving Show
-
-data LetPattern a
-    = FuncPattern 
-        { letFuncName :: Identifier
-        , letFuncArgs :: [Pattern a]
-        }
-    | LetPattern (Pattern a)
   deriving Show
 
 data TypeSig = TypeSig
@@ -203,9 +204,13 @@ data PrimExpr
 data Expr a
     = Primitive PrimExpr Position a
     | Var Identifier Position a
-    -- ^ an identifier
-    | ScopedName ModuleId Identifier Position a
-    -- ^ name from a module (e.g. `Foo.Bar.x`)
+    -- ^ an identifier (e.g. map, (++))
+    | Constructor ConstructorName Position a
+    -- ^ a constructor (e.g. Just, [], ::, Nothing)
+    | QualifiedVar ModName Identifier Position a
+    -- ^ an explicitly qualified identifier (e.g. Foo\bar)
+    | QualifiedConstructor ModName ConstructorName Position a
+    -- ^ an explicitly qualified constructor (e.g. Foo\Nothing)
     | And (Expr a) (Expr a) Position a
     -- ^ 'and' boolean operator with its left and right operands
     | Or (Expr a) (Expr a) Position a
@@ -216,10 +221,8 @@ data Expr a
     -- ^ list of expressions to be evaluated in order
     | LetIn (LetDef a) (Expr a) a
     -- ^ local definition. Binds only in the Expr following it. Does not
-    --   store Position as it is stored both in LetDef and (maybe) in Expr
-    | MultiLetIn [LetDef a] (Expr a) a
-    -- ^ multiple mutually recursive local definitions.
-    | Lambda [Pattern a] (Expr a) (Maybe Identifier) Position a
+    --   store Position as it is stored both in Definition and (maybe) in Expr
+    | Lambda (Pattern a) (Expr a) (Maybe T.Text) Position a
     -- ^ lambda expression with the list of bindings (patterns) and
     --   the expression to evaluate upon the function call.
     --   May remember the name if it was defined in 'let'-definiiton.
@@ -233,7 +236,7 @@ data Expr a
     | Match (Expr a) [MatchCase a] Position a
     -- ^ pattern matching of Expr with a list of patterns. First matching
     --   pattern is choosen.
-    | Extern FilePath T.Text Position a
+    | External FilePath T.Text Position a
     -- ^ used to import foreign functions from shared libraries.
     | Internal Identifier Position a
     -- ^ built-in compiler value.
