@@ -52,7 +52,7 @@ instance PrettyPrint (Expr a) where
             <> T.concat (map ((<> ", ") . prettyPrint 0) exprs) 
             <> ">]"
     prettyPrint i (App f arg a) =
-        indent i <> "(" <> prettyPrint 0 f <> " " <> prettyPrint 0 arg
+        indent i <> "(" <> prettyPrint 0 f <> " " <> prettyPrint 0 arg <> ")"
     prettyPrint i (Match expr cases _ _) =
         indent i <> "match" <> prettyPrint 0 expr <> "with\n"
                  <> T.concat (map (prettyPrint $ i + 1) cases)
