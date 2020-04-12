@@ -3,15 +3,15 @@ module Syntax where
 import qualified Data.Text as T
 import Utility (Position)
 
-newtype Identifier = Identifier T.Text deriving Show
+newtype Identifier = Identifier T.Text deriving (Show, Eq, Ord)
 
-newtype TypeVar = TypeVar T.Text deriving Show
+newtype TypeVar = TypeVar T.Text deriving (Show, Eq, Ord)
 
-newtype ConstructorName = ConstructorName T.Text deriving Show
+newtype ConstructorName = ConstructorName T.Text deriving (Show, Eq, Ord)
 
-newtype TypeName = TypeName T.Text deriving Show
+newtype TypeName = TypeName T.Text deriving (Show, Eq, Ord)
 
-newtype ModName = ModName T.Text deriving Show
+newtype ModName = ModName T.Text deriving (Show, Eq, Ord)
 
 data Located a = Located
     { location  :: Position
@@ -28,7 +28,7 @@ data ModuleId = ModuleId
     { modulePrefix :: [ModName]
     , moduleName   :: ModName
     }
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data Module a = Module 
     { moduleId      :: ModuleId
@@ -53,7 +53,7 @@ data ImportedValue
     -- ^ imported variable (e.g. '(>>=)', 'map')
     | ImportedType TypeName (Maybe [ConstructorName])
     -- ^ type and constructor import (e.g. Maybe(Nothing), Either(), Map(..))
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data TopLevelDef a
     = TopLevelLet (LetDef a)
@@ -117,7 +117,7 @@ data Constraint = Constraint
     { constraintName  :: TypeName
     , constraintParam :: TypeVar
     }
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data Instance a = Instance
     { instanceClass       :: TypeName
@@ -132,7 +132,7 @@ data TypeSig = TypeSig
     { typeSigConstraints :: [Constraint]
     , typeSig            :: Type
     }
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data PrimType
     = IntT
@@ -142,23 +142,23 @@ data PrimType
     | BoolT
     | UnitT
     | CPtrT
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data TypeCase
     = TypeCaseRecord ConstructorName RecordType Position
     -- ^ constructor of a record
     | TypeCase ConstructorName [TypeSig] Position
     -- ^ normal constructor (e.g. 'Just a')
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 
-newtype RecordType = RecordType [RecordField] deriving Show
+newtype RecordType = RecordType [RecordField] deriving (Show, Eq, Ord)
 
 data RecordField = RecordField
     { recordFieldName :: Identifier
     , recordFieldType :: TypeSig
     }
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data KindSig
     = TypeKind
@@ -184,7 +184,7 @@ data Type
     -- ^ tuple of types (e.g. '(Int, a, Float)')
     | ArrayType Type
     -- ^ array of elements of some type (e.g '[>Int<]', [>[>a<]<])
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data PrimExpr
     = IntLit Int
