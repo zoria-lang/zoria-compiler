@@ -36,7 +36,7 @@ instance PrettyPrint (Expr a) where
       where
         aux expr = prettyPrint (i + 1) expr <> ";\n"
     prettyPrint i (LetIn def expr _) = 
-        prettyPrint i def <> "in\n" <> prettyPrint (i + 1) expr
+        prettyPrint i def <> " in\n" <> prettyPrint (i + 1) expr
     prettyPrint i (Lambda pat expr _ _ _) = 
         indent i <> "fn " 
                  <> prettyPrint 0 pat <> " => " 
