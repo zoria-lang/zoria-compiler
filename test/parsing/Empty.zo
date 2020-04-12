@@ -1,8 +1,9 @@
 module Empty {foo, bar, Baz{Foo,Bar}}
 
-# import Foo\Empty
+import Foo\Empty
 # import OtherEmpty {qwe} as Eeeee
 # import Test as T
+
 
 
 let-infix + 4 left
@@ -12,6 +13,26 @@ let-infix / 3 left
 let-infix ^ 2 right
 
 let _ := 2 + 2 * 2 - 4 ^ 10 / 7
+
+let-infix `Constructor` 9 left
+let aaa := 5 `Constructor` 20
+
+let-infix `mod` 3 left
+let ddd := 5 `mod` 2
+
+
+let xs := [] ++ xs
+
+
+
+
+#:
+let _ := 2 + 2 * 2 - 4 ^ 10 / 7
+
+let x := let z := x * 3 in z ^ 100
+
+let f x (z, ()) := foo (x, z)
+:#
 
 
 #:

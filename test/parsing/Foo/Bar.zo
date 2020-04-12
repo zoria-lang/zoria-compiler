@@ -1,6 +1,8 @@
-module Bar {bar}
+module Bar {bar, Test{(::)}}
 
 let bar x := x
+
+let-infix :: 7 right
 
 #:
 

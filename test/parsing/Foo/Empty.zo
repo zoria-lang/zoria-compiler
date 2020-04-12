@@ -1,3 +1,8 @@
-module Empty {(++)}
+module Empty {Test{(::)}}
 
-let-infix ++ 4 left
+import Bar {Test{(::)}} as B
+
+
+
+
+let-infix ++ 3 left

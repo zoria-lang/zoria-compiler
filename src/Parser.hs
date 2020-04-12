@@ -112,7 +112,7 @@ newParserState :: ParserState
 newParserState = ParserState Map.empty [] Map.empty Map.empty []
 
 -- Parser of programs. It is supposed to be used once.
-program :: ParserIO (AST.Program ())
+program :: ParserIO (Program ())
 program = do
     -- TODO: import prelude
     rootFile <- head . optInputs <$> getopt
@@ -160,11 +160,6 @@ module' path = do
     withStack name path $ do
         rawImports  <- P.many $ located (import' <?> "module import")
         imports     <- forM rawImports importFile
-
-        ops <- stateCurrentOps <$> lift get
-        debug $ show ops
-
-
         definitions <- catMaybes <$> (P.many $ topLevelDef)
         skipWhitespace >> P.eof
         exportOperators exports -- at the end we update the operator table
@@ -290,6 +285,11 @@ defineOperator (op, priority, fixity) = do
     let previousOps   = concat $ Map.lookup (priority, fixity) visible
         updatedTable  = Map.insert (priority, fixity) (op : previousOps) visible
         updatedLocals = op : (stateLocalOps state)
+
+    debug $ "ADDING " ++ show op
+    debug $ show updatedLocals
+    debug $ show updatedLocals
+
     assertUndefined op previousOps
     lift $ put state { stateCurrentOps = updatedTable 
                      , stateLocalOps   = updatedLocals
@@ -396,7 +396,7 @@ prettyPrintCustomOp (PrefixVarOperator op) = '(' : T.unpack op ++ ")"
 -- Check whether some custom operator is a prefix operator (e.g. `elem`)
 isPrefixOp :: CustomOperator -> Bool
 isPrefixOp (PrefixConstrOperator _) = True
-isPrefixOp (PrefixVarOperator _) = True
+isPrefixOp (PrefixVarOperator _)    = True
 isPrefixOp _ = False
 
 -- Checks whether some custom operators is an infix operator (e.g. ::, >>=)
@@ -405,8 +405,8 @@ isInfixOp = not . isPrefixOp
 
 -- Checks whether some custom operator is a constructor operator
 isConstructorOp :: CustomOperator -> Bool
-isConstructorOp (ConstrOperator _) = True
 isConstructorOp (PrefixConstrOperator _) = True
+isConstructorOp (ConstrOperator _) = True
 isConstructorOp _ = False
 
 -- Checks whether some custom operator is a normal operator
@@ -430,7 +430,7 @@ kindOfOperator kind priority fixity = do
     operators <- filter kind <$> getOperators priority fixity
     let infixOps  = unwrapOperator <$> filter isInfixOp operators
         prefixOps = unwrapOperator <$> filter isPrefixOp operators
-    infixOp infixOps <|> prefixOp prefixOps
+    infixOp infixOps <|> P.try (prefixOp prefixOps)
   where
     infixOp :: [T.Text] -> ParserIO T.Text
     infixOp ops = P.choice (map symbol ops)
@@ -509,7 +509,8 @@ operatorDecl = do
 customOperator :: ParserIO CustomOperator
 customOperator = ConstrOperator <$> constructorOperator
              <|> VarOperator    <$> operator
-             <|> PrefixConstrOperator <$> surroundedBy "`" uppercaseName "`"
+             <|> PrefixConstrOperator 
+                <$> (P.try $ surroundedBy "`" uppercaseName "`")
              <|> PrefixVarOperator    <$> surroundedBy "`" lowercaseName "`"
 
 -- Parser for operator fixity in operator declarations.
