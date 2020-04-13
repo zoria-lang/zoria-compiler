@@ -147,7 +147,7 @@ instance PrettyPrint (LetDef a) where
         indent i <> "let " <> prettyPrint 0 def
     prettyPrint i (LetRecDef defs _) =
         indent i 
-        <> "let-rec {"
+        <> "let-rec {\n"
         <> T.concat (map ((<> "\n") . prettyPrint (i + 1)) defs)
         <> indent i <> "\n}"
 
@@ -157,6 +157,7 @@ instance PrettyPrint (Definition a) where
             <> prettyPrint 0 pattern 
             <> " : " 
             <> maybePrint sig 
+            <> " = "
             <> prettyPrint 0 expr
       where
         maybePrint Nothing = ""
