@@ -12,18 +12,41 @@ let-infix * 3 left
 let-infix / 3 left
 let-infix ^ 2 right
 
+let-rec rec := "re { 2 - 3} c"
+
+let-rec foooo := "{ let x := 10 in 20 }"
+
+let-infix :++ 2 none
+
+# let-rec (woo :++ hoo) := 'x' +- (2 * 2)
+
+let main := {
+    println "hello, world!";
+    let x := 20;
+    x + 3
+}
+
+let-rec {
+    first := 1;
+    second : a -> b = foo bar
+}
+
 let _ := 2 + 2 * 2 - 4 ^ 10 / 7
 
-let-infix `Constructor` 9 left
 let aaa := 5 `Constructor` 20
 
+let-infix :+ 3 none
+
+let (x :+ d) := 42
+let xs@(1 :: 2 :: 3 :: []) := xs
+
 let-infix `mod` 3 left
-let ddd := 5 `mod` 2
+let ddd := 5 `mod` (2 `mod` 7)
 
 
 let xs := [] ++ xs
 
-
+let zs := 1 :: 2 :: []
 
 
 #:
@@ -57,7 +80,4 @@ let x : Int = 42
 let y : Float = 3.14
 let foo := let x := 7 in foo
 :#
-
-
-
 :#

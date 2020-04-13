@@ -52,15 +52,17 @@ type Errors   = P.ParseErrorBundle T.Text Void
 
 -- State used by StateT in the parser.
 data ParserState = ParserState
-    { stateCurrentOps  :: LocalOperators
+    { stateCurrentOps   :: LocalOperators
     -- ^ operators visible in the currently parsed file
-    , stateLocalOps    :: [CustomOperator]
+    , stateLocalTypeOps :: Map.Map TypeName [CustomOperator]
+    -- ^ operator constructors visible in the currently parser dile
+    , stateLocalOps     :: [CustomOperator]
     -- ^ list of operators defined within the current module
-    , stateExportedOps :: GlobalOperators
+    , stateExportedOps  :: GlobalOperators
     -- ^ operators that are exported by some files
-    , stateVisited     :: Map.Map FilePath (Module ())
+    , stateVisited      :: Map.Map FilePath (Module ())
     -- ^ modules that were already parsed which allows us to parse them once
-    , stateModuleStack :: [(ModName, FilePath)]
+    , stateModuleStack  :: [(ModName, FilePath)]
     -- ^ stack used to keep track of current file path and to detect cycles
     }
   deriving Show
@@ -109,7 +111,14 @@ stdPreludePath = stdLibraryDir </> preludeName <.> fileExtension
 
 -- Fresh state for the parser's internal StateT monad
 newParserState :: ParserState
-newParserState = ParserState Map.empty [] Map.empty Map.empty []
+newParserState = ParserState
+    { stateCurrentOps   = Map.empty
+    , stateLocalTypeOps = Map.empty
+    , stateLocalOps     = []
+    , stateExportedOps  = Map.empty
+    , stateVisited      = Map.empty
+    , stateModuleStack  = []
+    }
 
 -- Parser of programs. It is supposed to be used once.
 program :: ParserIO (Program ())
@@ -285,11 +294,6 @@ defineOperator (op, priority, fixity) = do
     let previousOps   = concat $ Map.lookup (priority, fixity) visible
         updatedTable  = Map.insert (priority, fixity) (op : previousOps) visible
         updatedLocals = op : (stateLocalOps state)
-
-    debug $ "ADDING " ++ show op
-    debug $ show updatedLocals
-    debug $ show updatedLocals
-
     assertUndefined op previousOps
     lift $ put state { stateCurrentOps = updatedTable 
                      , stateLocalOps   = updatedLocals
@@ -427,15 +431,21 @@ kindOfOperator :: (CustomOperator -> Bool)
                 -> Fixity 
                 -> ParserIO T.Text
 kindOfOperator kind priority fixity = do
+    -- TODO: try to parse every operator to be able to give "undefined" error
     operators <- filter kind <$> getOperators priority fixity
     let infixOps  = unwrapOperator <$> filter isInfixOp operators
         prefixOps = unwrapOperator <$> filter isPrefixOp operators
     infixOp infixOps <|> P.try (prefixOp prefixOps)
   where
     infixOp :: [T.Text] -> ParserIO T.Text
-    infixOp ops = P.choice (map symbol ops)
+    infixOp ops = P.choice (map operatorSymbol ops)
+      where
+        operatorSymbol :: T.Text -> ParserIO T.Text
+        operatorSymbol op = 
+            P.try (symbol op <* P.notFollowedBy operatorCharOrColon)
     prefixOp :: [T.Text] -> ParserIO T.Text
     prefixOp ops = P.char '`' *> P.choice (map P.string ops) <* symbol "`"
+
 
 -- Parser for constructor operators (e.g. ::, `Foo`)
 constructorOperator' :: Priority -> Fixity -> ParserIO T.Text
@@ -740,12 +750,12 @@ primType = keyword "Int" $> IntT
 
 -- Parser for expressions.
 expression :: ParserIO (Expr ())
-expression = P.label "expression" $ 
+expression = (P.label "expression" $
              letIn
          <|> conditionalExpr
          <|> patternMatching 
          <|> lambdaExpr
-         <|> annotatedExpr
+         <|> annotatedExpr) <* noUndefinedOperator
 
 -- Parser for 'let ... in' and 'let-rec ... in' expressions.
 letIn :: ParserIO (Expr ())
@@ -855,10 +865,21 @@ exprOperator priority fixity = P.label "infix operator" $
         op <- kindOfOperator isConstructorOp priority fixity
         return $ Constructor (ConstructorName op) pos ()
 
+-- Ugly hack for reporting unknown operators. This parser looks ahead to
+-- see if there is any leftover operator. If there is one, then we can
+-- report it as undefined.
+noUndefinedOperator :: ParserIO ()
+noUndefinedOperator = P.option () $ 
+    P.try hasUndefined >>= \op -> fail $ "unknown operator " ++ show op
+  where
+    hasUndefined :: ParserIO T.Text
+    hasUndefined = unwrapOperator <$> customOperator
+
 -- Parser for expressions with (custom) operators.
 -- There is a lot of repetition but it's not possible to abstract into a
 -- single definition since there are subtle differences between clauses.
 opExpr :: Priority -> Fixity -> ParserIO (Expr ())
+-- opExpr 0 _ = application --TODO: add undeclared operator check chere
 opExpr 0 _ = application
 opExpr priority NoneFix = do
     lhs <- nextPriorityExpr <?> "expression"
@@ -921,6 +942,12 @@ atomicExpr = withPos $ \pos ->
     <|> P.try constructorExpr
     <|> P.try (P.between (symbol "(") (symbol ")") expression)
     <|> tupleExpr
+
+-- Returns a readable error in case of an undefined operator.
+operatorFail :: ParserIO a
+operatorFail = do
+    op <- unwrapOperator <$> P.try customOperator
+    fail $ "unknown operator " ++ show op 
 
 -- Used by blockExpr parser.
 data BlockElem
@@ -1120,8 +1147,7 @@ nameChar = P.choice [P.alphaNumChar, P.char '\'', P.char '_']
 -- Parser for patterns which can appear either in 'match ... with' 
 -- or let definitions
 pattern :: ParserIO (Pattern ())
-pattern = P.try (infixConstructorPattern 10 NoneFix)
-    <|> namedPattern                 
+pattern = infixConstructorPattern 10 NoneFix <* noUndefinedOperator
 
 -- Infix application of a constructor (e.g. a `Foo` b, x::xs)
 infixConstructorPattern :: Priority -> Fixity -> ParserIO (Pattern ())
@@ -1161,10 +1187,13 @@ infixConstructorPattern priority LeftFix = withPos $ \pos -> do
 
 -- Prefix application of a constructor (e.g. Just 42, (::) x xs)
 prefixConstructorPattern :: ParserIO (Pattern ())
-prefixConstructorPattern = withPos $ \pos -> do
-    constructor <- constructorName
-    arguments <- P.many namedPattern
-    return $ ConstructorPattern constructor arguments pos ()
+prefixConstructorPattern = P.try constructorPattern <|> namedPattern
+  where
+    constructorPattern :: ParserIO (Pattern ())
+    constructorPattern = withPos $ \pos -> do
+        constructor <- constructorName
+        arguments <- P.many namedPattern
+        return $ ConstructorPattern constructor arguments pos ()
 
 -- Parser for synonym patterns (e.g. ys@(x::xs))
 namedPattern :: ParserIO (Pattern ())
@@ -1275,6 +1304,10 @@ getopt = lift . lift $ ask
 debug :: String -> ParserIO ()
 debug str = withPos $ \(Position pos file) -> 
     liftIO . putStrLn $ show file ++ " " ++ show pos ++ ": " ++ str
+
+-- Failure without an explicit cause
+silentFail :: ParserIO ()
+silentFail = void $ P.satisfy (const False)
 
 -- Function used to simplyfy running the parser monad stack.
 -- It takes the parser to be run, file name (used for errors), input string,

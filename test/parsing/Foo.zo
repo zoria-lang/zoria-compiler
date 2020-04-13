@@ -1,3 +1,5 @@
 module Foo {foo}
 
-let foo x := x
+let-infix + 4 left
+
+let _ := 2 +- 2
