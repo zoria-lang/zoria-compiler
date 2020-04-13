@@ -55,7 +55,7 @@ instance PrettyPrint (Expr a) where
         indent i <> "(" <> prettyPrint 0 f <> " " <> prettyPrint 0 arg <> ")"
     prettyPrint i (Match expr cases _ _) =
         indent i <> "match " <> prettyPrint 0 expr <> " with\n"
-                 <> T.concat (map ((<> "\n") . prettyPrint $ i + 1) cases)
+                 <> T.concat (map ((<> "\n") . prettyPrint (i + 1)) cases)
     prettyPrint i (External path id _ _) = 
         indent i <> "(_external " <> id <> " " <> id <> ")"
     prettyPrint i (Internal (Identifier id) _ _) =
