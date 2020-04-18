@@ -305,8 +305,6 @@ defineOperator (op, priority, fixity) pos = do
     let previousOps   = concat $ Map.lookup (priority, fixity) visible
         updatedTable  = Map.insert (priority, fixity) (op : previousOps) visible
         updatedLocals = op : (stateLocalOps state)
-    debug $ "defineOperator: operator " ++ prettyPrintCustomOp op ++ " is being defined!"
-    debug $ "previous: " ++ show previousOps ++ "!\n"
     assertUndefined op (stateLocalOps state)
     lift $ put state { stateCurrentOps = updatedTable 
                      , stateLocalOps   = updatedLocals
