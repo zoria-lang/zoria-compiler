@@ -190,8 +190,9 @@ module' path = do
         let hasAlias    = isJust . importAlias $ importedModule
             path        = modulePath . importMod $ importedModule
             identifiers = importIds importedModule
+            pos         = importLoc importedModule
         visible  <- (concat . Map.lookup path . stateExportedOps) <$> lift get
-        addLocalOperators $ processImports path identifiers visible hasAlias
+        addLocalOperators pos $ processImports path identifiers visible hasAlias
     -- Given the path and list of imports figure out what operators need to
     -- be imported into the current operator table. If the import has an alias
     -- then the operators have to be explicitly imported to be included.
@@ -208,8 +209,10 @@ module' path = do
         strippedImports = concat $ strip . unlocated <$> imports
     -- Function which adds operators from an imported module and puts
     -- them in the local operator table.
-    addLocalOperators :: [(CustomOperator, Priority, Fixity)] -> ParserIO ()
-    addLocalOperators = mapM_ defineOperator
+    addLocalOperators :: Position 
+                      ->[(CustomOperator, Priority, Fixity)] 
+                      -> ParserIO ()
+    addLocalOperators pos = mapM_ (flip defineOperator pos)
     -- Function for detection of invalid module names. Module names should 
     -- match the file names.
     checkModuleName :: ModName -> ParserIO ()
@@ -295,21 +298,26 @@ unwrapOperator (VarOperator op) = op
 unwrapOperator (PrefixVarOperator op) = op
 
 -- Function which adds an operator declaration to the local operator table.
-defineOperator :: (CustomOperator, Priority, Fixity) -> ParserIO ()
-defineOperator (op, priority, fixity) = do
+-- It takes the position of the operator declaration for better error handling.
+defineOperator :: (CustomOperator, Priority, Fixity) -> Position -> ParserIO ()
+defineOperator (op, priority, fixity) pos = do
     state @ ParserState { stateCurrentOps = visible } <- lift get
     let previousOps   = concat $ Map.lookup (priority, fixity) visible
         updatedTable  = Map.insert (priority, fixity) (op : previousOps) visible
         updatedLocals = op : (stateLocalOps state)
-    assertUndefined op previousOps
+    debug $ "defineOperator: operator " ++ prettyPrintCustomOp op ++ " is being defined!"
+    debug $ "previous: " ++ show previousOps ++ "!\n"
+    assertUndefined op (stateLocalOps state)
     lift $ put state { stateCurrentOps = updatedTable 
                      , stateLocalOps   = updatedLocals
                      }
   where
     -- Assert that we are not overwritting some other custom operator.
     assertUndefined :: CustomOperator -> [CustomOperator] -> ParserIO ()
-    assertUndefined op ops = when (op `elem` ops) $ fail $
-        "illegal redeclaration of the operator " ++ prettyPrintCustomOp op
+    -- TODO: print the position where the operator was actually redefined
+    assertUndefined op ops = when (op `elem` ops) $ 
+        posFail pos $ "illegal redeclaration of the operator " 
+             ++ prettyPrintCustomOp op
 
 -- Perform some parsing computation inside a stack frame. On the stack we store
 -- module names so that parser knows which module is parsed at the moment
@@ -402,10 +410,10 @@ popModulePath = do
 
 -- Pretty prints a custom operator.
 prettyPrintCustomOp :: CustomOperator -> String
-prettyPrintCustomOp (ConstrOperator op) = '`' : T.unpack op ++ "`"
-prettyPrintCustomOp (PrefixConstrOperator op) = '(' : T.unpack op ++ ")"
-prettyPrintCustomOp (VarOperator op) = '`' : T.unpack op ++ "`"
-prettyPrintCustomOp (PrefixVarOperator op) = '(' : T.unpack op ++ ")"
+prettyPrintCustomOp (PrefixConstrOperator op) = '`' : T.unpack op ++ "`"
+prettyPrintCustomOp (ConstrOperator op) = '(' : T.unpack op ++ ")"
+prettyPrintCustomOp (PrefixVarOperator op) = '`' : T.unpack op ++ "`"
+prettyPrintCustomOp (VarOperator op) = '(' : T.unpack op ++ ")"
 
 -- Check whether some custom operator is a prefix operator (e.g. `elem`)
 isPrefixOp :: CustomOperator -> Bool
@@ -453,11 +461,14 @@ kindOfOperator kind priority fixity = do
         operatorSymbol :: T.Text -> ParserIO T.Text
         operatorSymbol op = 
             P.try (symbol op <* P.notFollowedBy operatorCharOrColon)
-        undefinedOperator :: ParserIO a
-        undefinedOperator = do
+        undefinedOperator :: ParserIO T.Text
+        undefinedOperator = withPos $ \pos -> do
             ops <- stateLocalOps <$> lift get
             op <- P.try (cond (\op -> not (op `elem` ops)) customOperator)
-            fail $ "undefined operator " ++ show (unwrapOperator op)
+            defineDefaultOperator op pos
+            return . unwrapOperator $ op
+        defineDefaultOperator :: CustomOperator -> Position -> ParserIO ()
+        defineDefaultOperator op = defineOperator (op, 5, LeftFix)
 
     prefixOp :: [T.Text] -> ParserIO T.Text
     prefixOp ops = P.char '`' *> P.choice (map P.string ops) <* symbol "`"
@@ -516,13 +527,13 @@ definition = withPos $ \pos -> do
 
 -- Parser for operator declarations.
 operatorDecl :: ParserIO ()
-operatorDecl = do
+operatorDecl = withPos $ \pos -> do
     P.try $ keyword "let-infix"
     op <- customOperator <?> "infix identifier"
     priority <- lexeme L.decimal <?> "operator precedence"
     fixity <- operatorFixity <?> "operator fixity (left, none or right)"
     assertValidPriority priority
-    defineOperator (op, priority, fixity)
+    defineOperator (op, priority, fixity) pos
   where
     assertValidPriority :: Priority -> ParserIO ()
     assertValidPriority priority =
@@ -1311,6 +1322,12 @@ cond predicate parser = do
     result <- parser
     guard (predicate result)
     return result
+
+-- Report failure at given location instead of the current parser position.
+posFail :: Position -> String -> ParserIO ()
+posFail pos msg = do
+    P.setOffset $ posOffset pos
+    fail msg
 
 -- Computation which extracts the command line options from the reader monad.
 getopt :: ParserIO Options
