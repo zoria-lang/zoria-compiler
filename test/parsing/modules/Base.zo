@@ -6,8 +6,11 @@ import Foo\External {}
 
 let _ := 1 + 2 + 3
 
+let-infix ^ 2 right
+
 let main _ := {
     1 + 2 + 3;
+    2 ^ 3 ^ 4;
     xs ++ ys ++ zs;
     println "Hello, world!";
 }

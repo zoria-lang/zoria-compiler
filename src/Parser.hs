@@ -22,7 +22,7 @@ import Data.Maybe (fromJust, isJust, catMaybes)
 import Data.Void (Void)
 import Utility (Position(..), findM)
 import GetOpt (Options(..), ModulePath(..), getOptions)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import Syntax as AST
 import System.FilePath.Posix ( takeDirectory
                              , takeFileName
@@ -52,17 +52,17 @@ type Errors   = P.ParseErrorBundle T.Text Void
 
 -- State used by StateT in the parser.
 data ParserState = ParserState
-    { stateCurrentOps   :: LocalOperators
+    { stateCurrentOps   :: !LocalOperators
     -- ^ operators visible in the currently parsed file
-    , stateLocalTypeOps :: Map.Map TypeName [CustomOperator]
+    , stateLocalTypeOps :: !(Map.Map TypeName [CustomOperator])
     -- ^ operator constructors visible in the currently parser dile
-    , stateLocalOps     :: [CustomOperator]
+    , stateLocalOps     :: ![CustomOperator]
     -- ^ list of operators defined within the current module
-    , stateExportedOps  :: GlobalOperators
+    , stateExportedOps  :: !GlobalOperators
     -- ^ operators that are exported by some files
-    , stateVisited      :: Map.Map FilePath (Module ())
+    , stateVisited      :: !(Map.Map FilePath (Module ()))
     -- ^ modules that were already parsed which allows us to parse them once
-    , stateModuleStack  :: [(ModName, FilePath)]
+    , stateModuleStack  :: ![(ModName, FilePath)]
     -- ^ stack used to keep track of current file path and to detect cycles
     }
   deriving Show
@@ -305,17 +305,23 @@ defineOperator (op, priority, fixity) pos = do
     let previousOps   = concat $ Map.lookup (priority, fixity) visible
         updatedTable  = Map.insert (priority, fixity) (op : previousOps) visible
         updatedLocals = op : (stateLocalOps state)
-    assertUndefined op (stateLocalOps state)
+    assertUndefined op
     lift $ put state { stateCurrentOps = updatedTable 
                      , stateLocalOps   = updatedLocals
                      }
   where
     -- Assert that we are not overwritting some other custom operator.
-    assertUndefined :: CustomOperator -> [CustomOperator] -> ParserIO ()
-    -- TODO: print the position where the operator was actually redefined
-    assertUndefined op ops = when (op `elem` ops) $ 
-        posFail pos $ "illegal redeclaration of the operator " 
-             ++ prettyPrintCustomOp op
+    assertUndefined :: CustomOperator -> ParserIO ()
+    assertUndefined op = do
+        ops <- currentOperators
+        when (op `elem` ops) $ posFail pos $ 
+            "illegal redeclaration of the operator " ++ prettyPrintCustomOp op
+    -- Extract all operators that are visible in the current module (this
+    -- is different than operators *defined* in the current module).
+    currentOperators :: ParserIO [CustomOperator]
+    currentOperators = do
+        table <- stateCurrentOps <$> lift get 
+        return . concat . Map.elems $ table
 
 -- Perform some parsing computation inside a stack frame. On the stack we store
 -- module names so that parser knows which module is parsed at the moment
@@ -485,7 +491,54 @@ topLevelDef :: ParserIO (Maybe (TopLevelDef ()))
 topLevelDef = (operatorDecl $> Nothing <?> "operator declaration")
     <|> (Just . TopLevelLet <$> letDef <?> "let definition")
     <|> (Just . TopLevelLet <$> letRecDef <?> "let-rec definition")
+    <|> (Just . AliasDef    <$> typeAliasDef <?> "type alias definition")
+    <|> (Just . TypeDef     <$> typeDef <?> "type definition")
+    <|> (Just . ClassDef    <$> classDef <?> "class definition")
+    <|> (Just . InstanceDef <$> instanceDef <?> "instance definition")
+
+typeDef :: ParserIO TDef
+typeDef = do
     -- TODO: implement
+    undefined
+
+classDef :: ParserIO Class
+classDef = do 
+    keyword "class" 
+    -- TODO: implement someday
+    fail "type classes are not supported yet :("
+
+instanceDef :: ParserIO (Instance ())
+instanceDef = do
+    keyword "instance"
+    -- TODO: implement someday
+    fail "type classes are not supported yet :("
+
+-- Parser for type aliases.
+typeAliasDef :: ParserIO TAlias
+typeAliasDef = withPos $ \pos -> do
+    keyword "alias"
+    tName <- (TypeName <$> typeName) <?> "type name"
+    params <- (P.many (TypeVar <$> typeVariable)) <?> "type parameters"
+    symbol ":"
+    kindSig <- P.optional kindSignature
+    symbol "="
+    -- TODO: maybe we shouldn't allow type signatures with constraints
+    --       in type aliases
+    aliasedType <- typeSignature
+    return $ TAlias tName params kindSig aliasedType pos
+
+-- Parser for kind signatures (e.g. *, * -> *).
+kindSignature :: ParserIO KindSig
+kindSignature = do
+    lhs <- atomicKind <?> "kind"
+    rhs <- P.optional $ symbol "->" >> kindSignature
+    return $ case rhs of
+        Just rhs -> TypeConstructorKind lhs rhs
+        Nothing  -> lhs
+  where
+    atomicKind :: ParserIO KindSig
+    atomicKind = P.between (symbol "(") (symbol ")") kindSignature
+             <|> (symbol "*" $> TypeKind)
 
 -- Parser for top-level let-definitions
 letDef :: ParserIO (LetDef ())
