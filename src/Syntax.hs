@@ -84,7 +84,7 @@ data TAlias = TAlias
     , aliasParams :: [TypeVar]
     , aliasKind   :: Maybe KindSig
     , aliasType   :: Type
-    , alisLoc     :: Position
+    , aliasLoc    :: Position
     }
   deriving Show
 
