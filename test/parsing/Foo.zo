@@ -1,5 +1,13 @@
 module Foo {foo}
 
 let-infix + 4 left
+let-infix :: 5 right
 
-let _ := 2 +- 2
+let _ := 2 + (-2)
+
+let _ :=
+    match [] with
+        case _       => '1'
+        case x       => 123
+        case []      => "123"
+        case (x::xs) => []

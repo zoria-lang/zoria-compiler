@@ -1,0 +1,5 @@
+module Another
+
+let test () := 42
+
+let-infix ++ 5 right

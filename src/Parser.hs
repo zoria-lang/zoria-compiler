@@ -14,7 +14,7 @@ import Control.Monad.State (StateT, runStateT, get, put)
 import Control.Monad.Trans.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (void, forM, when, mapM_)
+import Control.Monad (void, forM, when, mapM_, guard)
 import Control.Applicative ((<|>))
 import Data.Functor (($>))
 import Data.List (find)
@@ -162,6 +162,7 @@ file path = do
 -- Parser for modules. The job of file parser is delegated here.
 module' :: FilePath -> ParserIO (Module())
 module' path = do
+    clearLocalOperators
     skipWhitespace
     (name, exports) <- moduleHeader <?> "module declaration"
     -- TODO: store the full absolute module name instead
@@ -169,6 +170,7 @@ module' path = do
     withStack name path $ do
         rawImports  <- P.many $ located (import' <?> "module import")
         imports     <- forM rawImports importFile
+        mapM_ importOperators imports
         definitions <- catMaybes <$> (P.many $ topLevelDef)
         skipWhitespace >> P.eof
         exportOperators exports -- at the end we update the operator table
@@ -178,13 +180,18 @@ module' path = do
     importFile :: Located RawImport -> ParserIO (Import ())
     importFile (Located position (id, alias, identifiers)) = do
         let (ModuleId prefix mod) = id
-        let hasAlias = isJust alias
         basePath <- getCurrentPath
         path     <- findModulePath basePath prefix mod
         mod      <- file path
+        return $ Import mod id alias position identifiers
+    -- Brings operators from a module into the current scope.
+    importOperators :: Import a -> ParserIO ()
+    importOperators importedModule = do
+        let hasAlias    = isJust . importAlias $ importedModule
+            path        = modulePath . importMod $ importedModule
+            identifiers = importIds importedModule
         visible  <- (concat . Map.lookup path . stateExportedOps) <$> lift get
         addLocalOperators $ processImports path identifiers visible hasAlias
-        return $ Import mod id alias position identifiers
     -- Given the path and list of imports figure out what operators need to
     -- be imported into the current operator table. If the import has an alias
     -- then the operators have to be explicitly imported to be included.
@@ -213,7 +220,7 @@ module' path = do
       where
         pathName = T.pack . dropExtension . takeFileName
     -- Adds all locally defined operators that are supposed to be exported to
-    -- the global operator export table. Clears the local operator table.
+    -- the global operator export table.
     exportOperators :: Maybe [Located ImportedValue] -> ParserIO ()
     exportOperators Nothing = do 
         locals <- stateLocalOps <$> lift get
@@ -318,8 +325,8 @@ withStack name path parser = do
 -- prefix (e.g. Data\Map) and the file name (e.g Strict). It may fail.
 findModulePath :: FilePath -> [ModName] -> ModName -> ParserIO FilePath
 findModulePath current prefix name = do
-    externalModules <- optModules <$> getopt
-    let choices = absPath : (optModPath <$> filter matching externalModules)
+    externalModules <- filter matching . optModules <$> getopt
+    let choices = absPath : (appendModName . optModPath <$> externalModules)
     path <- findM (liftIO . doesFileExist) choices
     case path of
         Nothing   -> fail $ "cannot find module " ++ show (unwrapName name)
@@ -341,10 +348,13 @@ findModulePath current prefix name = do
     -- Checks whether the first part of the module name fits some
     -- module path found in the command line arguments.
     matching :: ModulePath -> Bool
+    matching (ModulePath "\\" _) = True
     matching mod
-        | null prefix = optModName mod == unwrapName name
-        | otherwise   = optModName mod == unwrapName (head prefix)
+        | null prefix            = optModName mod == unwrapName name
+        | otherwise              = optModName mod == unwrapName (head prefix)
     unwrapName (ModName name) = name
+    appendModName :: FilePath -> FilePath
+    appendModName path = path </> T.unpack (unwrapName name) <.> fileExtension
 
 -- Parser for a single import statement. It does not read any new files.
 import' :: ParserIO RawImport
@@ -438,11 +448,17 @@ kindOfOperator kind priority fixity = do
     infixOp infixOps <|> P.try (prefixOp prefixOps)
   where
     infixOp :: [T.Text] -> ParserIO T.Text
-    infixOp ops = P.choice (map operatorSymbol ops)
+    infixOp ops = P.choice (map operatorSymbol ops) <|> undefinedOperator
       where
         operatorSymbol :: T.Text -> ParserIO T.Text
         operatorSymbol op = 
             P.try (symbol op <* P.notFollowedBy operatorCharOrColon)
+        undefinedOperator :: ParserIO a
+        undefinedOperator = do
+            ops <- stateLocalOps <$> lift get
+            op <- P.try (cond (\op -> not (op `elem` ops)) customOperator)
+            fail $ "undefined operator " ++ show (unwrapOperator op)
+
     prefixOp :: [T.Text] -> ParserIO T.Text
     prefixOp ops = P.char '`' *> P.choice (map P.string ops) <* symbol "`"
 
@@ -750,12 +766,12 @@ primType = keyword "Int" $> IntT
 
 -- Parser for expressions.
 expression :: ParserIO (Expr ())
-expression = (P.label "expression" $
+expression = P.label "expression" $
              letIn
          <|> conditionalExpr
          <|> patternMatching 
          <|> lambdaExpr
-         <|> annotatedExpr) <* noUndefinedOperator
+         <|> annotatedExpr
 
 -- Parser for 'let ... in' and 'let-rec ... in' expressions.
 letIn :: ParserIO (Expr ())
@@ -865,16 +881,6 @@ exprOperator priority fixity = P.label "infix operator" $
         op <- kindOfOperator isConstructorOp priority fixity
         return $ Constructor (ConstructorName op) pos ()
 
--- Ugly hack for reporting unknown operators. This parser looks ahead to
--- see if there is any leftover operator. If there is one, then we can
--- report it as undefined.
-noUndefinedOperator :: ParserIO ()
-noUndefinedOperator = P.option () $ 
-    P.try hasUndefined >>= \op -> fail $ "unknown operator " ++ show op
-  where
-    hasUndefined :: ParserIO T.Text
-    hasUndefined = unwrapOperator <$> customOperator
-
 -- Parser for expressions with (custom) operators.
 -- There is a lot of repetition but it's not possible to abstract into a
 -- single definition since there are subtle differences between clauses.
@@ -958,8 +964,8 @@ data BlockElem
 blockExpr :: ParserIO (Expr ())
 blockExpr = withPos $ \pos -> do
     symbol "{"
-    exprs <- P.many $ blockLet <* symbol ";" 
-          <|> P.try (blockExpr <* symbol ";")
+    exprs <- P.many $ (blockLet <* symbol ";") 
+                  <|> P.try (blockExpr <* symbol ";")
     final <- withPos $ \pos -> P.option (implicitUnit pos) (P.try blockExpr)
     symbol "}"
     return $ Block (desugar $ exprs ++ [final]) pos ()
@@ -1147,7 +1153,7 @@ nameChar = P.choice [P.alphaNumChar, P.char '\'', P.char '_']
 -- Parser for patterns which can appear either in 'match ... with' 
 -- or let definitions
 pattern :: ParserIO (Pattern ())
-pattern = infixConstructorPattern 10 NoneFix <* noUndefinedOperator
+pattern = infixConstructorPattern 10 NoneFix
 
 -- Infix application of a constructor (e.g. a `Foo` b, x::xs)
 infixConstructorPattern :: Priority -> Fixity -> ParserIO (Pattern ())
@@ -1253,9 +1259,11 @@ literalPattern = withPos $ \pos -> do
     expr <- primExpr
     return $ ConstPattern expr pos ()
 
+-- Constructor name constant for the nil constructor.
 nilConstructor :: ConstructorName
 nilConstructor = ConstructorName "[]"
 
+-- Constructor name constant for the cons operator.
 consConstructor :: ConstructorName
 consConstructor = ConstructorName "::"
 
@@ -1296,6 +1304,14 @@ symbol = L.symbol skipWhitespace
 check :: ParserIO a -> ParserIO Bool
 check p = P.hidden $ P.optional (P.try $ void p) >>= return . isJust
 
+-- Parser which fails if the result of given parser does not match the 
+-- predicate.
+cond :: (a -> Bool) -> ParserIO a -> ParserIO a
+cond predicate parser = do
+    result <- parser
+    guard (predicate result)
+    return result
+
 -- Computation which extracts the command line options from the reader monad.
 getopt :: ParserIO Options
 getopt = lift . lift $ ask
@@ -1331,13 +1347,21 @@ runParser parser file input initState options = do
 -- specified as command line argument.
 parseProgram :: IO (Program ())
 parseProgram = do
-    opts   <- getOptions
+    opts   <- addRootModule <$> getOptions
     result <- runParser program "" "" newParserState opts
     case result of
-        Left err  -> do 
+        Left err -> do 
             putStrLn $ P.errorBundlePretty err
             exitFailure
         Right program -> return program
+  where
+    -- Adds the main file directory to the list of external modules specified
+    -- in command line arguments. The module root name is "\".
+    addRootModule :: Options -> Options
+    addRootModule opts@(Options { optModules = mods, optInputs = inputs }) = 
+        opts { optModules = rootModule : mods }
+      where
+        rootModule = ModulePath "\\" (takeDirectory $ head inputs)
 
 -- Helper function used to test parsers.
 testParser :: Show a => ParserIO a -> T.Text -> IO ()

@@ -1,0 +1,12 @@
+module Base
+
+import Nested\Foo
+import Foo\External {}
+
+let _ := 1 + 2 + 3
+
+let main _ := {
+    1 + 2 + 3;
+    xs ++ ys ++ zs;
+    println "Hello, world!";
+}
