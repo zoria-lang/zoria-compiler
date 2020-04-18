@@ -173,11 +173,10 @@ instance PrettyPrint (Program a) where
 instance PrettyPrint (Module a) where
     prettyPrint i (Module id _ imports exports defs) =
         indent i <> "module " <> prettyPrint 0 id <> "\n"
-            <> T.concat (map ((<> "\n") . prettyPrint i) defs)
-            <> "\n"
-            <> indent i <> "imports: ("
+            <> T.concat (map ((<> "\n") . prettyPrint (i + 1)) defs)
+            <> indent i <> "imports: (\n"
             <> T.concat (map (prettyPrint (i + 1) . importMod) imports)
-            <> indent i <> "\n)\n"
+            <> "\n" <> indent i <> ")\n"
 
 instance PrettyPrint ModuleId where
     prettyPrint i (ModuleId prefix (ModName name)) =
