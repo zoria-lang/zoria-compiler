@@ -4,9 +4,13 @@ import Nested\Foo
 import DefaultOperatorTest
 import Foo\External {}
 
+alias FooBar a b : * -> * -> * = Either a b
+
 let _ := 1 + 2 + 3
 
 let-infix ^ 2 right
+
+# alias Foo := Int
 
 let main _ := {
     1 + 2 + 3;

@@ -4,7 +4,6 @@ module DefaultOperatorTest
 let _ := x * y * z
 #          ^ first definition of "*"
 # let-infix * 5 right
-# illegal redeclaration of the operator (*)
-# let-infix * 6 left
+# ^ illegal redeclaration of the operator (*)
 
 let _ := 42

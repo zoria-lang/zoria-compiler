@@ -165,7 +165,21 @@ instance PrettyPrint (Definition a) where
 
 instance PrettyPrint (TopLevelDef a) where
     prettyPrint i (TopLevelLet def) = prettyPrint i def
-    prettyPrint _ _ = undefined
+    prettyPrint i (AliasDef alias)  = prettyPrint i alias
+    prettyPrint i (TypeDef tdef)    = prettyPrint i tdef
+    prettyPrint i _ = undefined
+
+instance PrettyPrint TDef where
+    prettyPrint i _ = undefined
+
+instance PrettyPrint TAlias where
+    prettyPrint i (TAlias (TypeName name) params _ type' _) =
+        indent i
+            <> "alias "
+            <> name <> " "
+            <> T.concat (map (\(TypeVar var) -> var <> " ") params) 
+            <> " := "
+            <> prettyPrint 0 type'
 
 instance PrettyPrint (Program a) where
     prettyPrint i (Program root) = prettyPrint i root

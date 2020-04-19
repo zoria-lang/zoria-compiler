@@ -168,8 +168,8 @@ module' path = do
     -- TODO: store the full absolute module name instead
     checkModuleName name
     withStack name path $ do
-        rawImports  <- P.many $ located (import' <?> "module import")
-        imports     <- forM rawImports importFile
+        imports  <- P.many $ 
+            located (import' <?> "module import") >>= importFile
         mapM_ importOperators imports
         definitions <- catMaybes <$> (P.many $ topLevelDef)
         skipWhitespace >> P.eof
@@ -287,8 +287,9 @@ module' path = do
     clearLocalOperators :: ParserIO ()
     clearLocalOperators = do
         state <- lift get
-        lift $ put state { stateCurrentOps = Map.empty
-                         , stateLocalOps   = [] 
+        lift $ put state { stateCurrentOps   = Map.empty
+                         , stateLocalOps     = [] 
+                         , stateLocalTypeOps = Map.empty
                          }
 
 unwrapOperator :: CustomOperator -> T.Text
@@ -496,10 +497,48 @@ topLevelDef = (operatorDecl $> Nothing <?> "operator declaration")
     <|> (Just . ClassDef    <$> classDef <?> "class definition")
     <|> (Just . InstanceDef <$> instanceDef <?> "instance definition")
 
+-- Parser for type definitions. All types must have at least one constructor.
 typeDef :: ParserIO TDef
-typeDef = do
-    -- TODO: implement
-    undefined
+typeDef = withPos $ \pos -> do
+    keyword "type"
+    tName <- (TypeName <$> typeName) <?> "type name"
+    params <- P.many (TypeVar <$> typeVariable <?> "type variable")
+    kindSig <- P.optional $ (symbol ":" *> kindSignature <?> "kind signature")
+    keyword "where"
+    constructors <- P.some typeDefCase
+    registerConstructors constructors
+    return $ TDef tName params kindSig constructors pos
+
+-- Parser for a single constructor in type definition (e.g. case Nothing).
+typeDefCase :: ParserIO TypeCase
+typeDefCase = withPos $ \pos -> do
+    keyword "case"
+    constrName <- constructorName
+    record constrName pos <|> normalConstructor constrName pos
+  where
+    -- Parser for records (e.g. Person { name : String, age : Int })
+    record :: ConstructorName -> Position -> ParserIO TypeCase
+    record name pos = do
+        members <- separatedList "{" "}" recordMember ","
+        return $ TypeCaseRecord name (RecordType members) pos
+      where
+        recordMember :: ParserIO RecordField
+        recordMember = do
+            memberName <- Identifier <$> prefixIdentifier
+            symbol ":"
+            -- TODO: maybe we shouldn't allow type signatures with constraints
+            memberType <- type'
+            return $ RecordField memberName memberType
+    -- Parser for normal constructor definitions (e.g. Just a)
+    normalConstructor :: ConstructorName -> Position -> ParserIO TypeCase
+    normalConstructor name pos = do
+        params <- P.many $ (atomicType <?> "constructor parameter")
+        return $ TypeCase name params pos
+
+-- Add all type constructors to the parser state so that later they can
+-- be implicitly exported.
+registerConstructors :: [TypeCase] -> ParserIO ()
+registerConstructors = undefined
 
 classDef :: ParserIO Class
 classDef = do 
@@ -522,9 +561,7 @@ typeAliasDef = withPos $ \pos -> do
     symbol ":"
     kindSig <- P.optional kindSignature
     symbol "="
-    -- TODO: maybe we shouldn't allow type signatures with constraints
-    --       in type aliases
-    aliasedType <- typeSignature
+    aliasedType <- type'
     return $ TAlias tName params kindSig aliasedType pos
 
 -- Parser for kind signatures (e.g. *, * -> *).
@@ -760,33 +797,33 @@ constraints = pure <$> singleConstraint
 
 -- Parser for types.
 type' :: ParserIO Type
-type' = P.try functionType
-    <|> paramType
+type' = functionType
 
 -- Parser for function types (e.g. a -> b)
 functionType :: ParserIO Type
 functionType = do
     from <- paramType
-    to   <- P.optional (symbol "->" >> functionType)
+    to   <- P.optional (symbol "->" *> functionType)
     return $ case to of
         Nothing -> from
         Just to -> FunctionType from to
 
 -- Parser for parametrized types (e.g. Maybe a, f a b c)
 paramType :: ParserIO Type
-paramType = P.try polyParamType <|> P.try concreteParamType <|> atomicType
+paramType = concreteParamType 
+        <|> polyParamType 
   where
     polyParamType :: ParserIO Type
     polyParamType = do
         t <- TypeVar <$> typeVariable
-        args <- P.many atomicType 
+        args <- P.many (P.try atomicType) 
         return $ case args of
             [] -> TypeVariable t
             _  -> PolymorphicParamType t args
     concreteParamType :: ParserIO Type
-    concreteParamType = do
+    concreteParamType = (P.try $ PrimitiveType <$> primType) <|> do
         t <- TypeName <$> typeName
-        args <- P.many atomicType
+        args <- P.many (P.try atomicType)
         return $ case args of
             [] -> NonPrimType t
             _  -> ParamType t args
@@ -795,7 +832,6 @@ paramType = P.try polyParamType <|> P.try concreteParamType <|> atomicType
 atomicType :: ParserIO Type
 atomicType = (P.try arrayType <?> "array type")
         <|> (P.try listType <?> "list type")
-        <|> (PrimitiveType <$> (P.try primType <?> "type name"))
         <|> (NonPrimType . TypeName <$> typeName <?> "type name")
         <|> (TypeVariable . TypeVar <$> typeVariable <?> "type variable")
         <|> P.try (P.between (symbol "(") (symbol ")") type')
