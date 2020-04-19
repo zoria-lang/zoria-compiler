@@ -170,13 +170,38 @@ instance PrettyPrint (TopLevelDef a) where
     prettyPrint i _ = undefined
 
 instance PrettyPrint TDef where
-    prettyPrint i _ = undefined
+    prettyPrint i (TDef (TypeName name) params _ cases _) =
+        indent i 
+            <> "type " 
+            <> name <> " " 
+            <> T.concat (map (\(TypeVar var) -> var <> " ") params)
+            <> " where\n"
+            <> T.concat (map ((<> "\n") . prettyPrint (i + 1)) cases)
+
+instance PrettyPrint TypeCase where
+    prettyPrint i (TypeCase (ConstructorName name) params _) =
+        indent i
+            <> "case "
+            <> name <> " "
+            <> T.concat (map ((\s -> "(" <> s <> ") ") . prettyPrint 0) params)
+    prettyPrint i (TypeCaseRecord (ConstructorName name) record _) =
+        indent i <> "case " <> name <> " " <> prettyPrint 0 record
+
+instance PrettyPrint RecordType where
+    prettyPrint i (RecordType fields) =
+        indent i
+            <> "{"
+            <> T.concat (map (T.cons ' ' . prettyPrint 0) fields)
+            <> " } "
+
+instance PrettyPrint RecordField where
+    prettyPrint i (RecordField (Identifier name) sig) =
+        indent i <> name <> " : " <> prettyPrint 0 sig
 
 instance PrettyPrint TAlias where
     prettyPrint i (TAlias (TypeName name) params _ type' _) =
         indent i
-            <> "alias "
-            <> name <> " "
+            <> "alias " <> name <> " "
             <> T.concat (map (\(TypeVar var) -> var <> " ") params) 
             <> " := "
             <> prettyPrint 0 type'

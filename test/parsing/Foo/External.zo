@@ -1,1 +1,9 @@
 module External
+
+let-rec {
+    foo := 2;
+    bar := let-rec {
+        foobar := 10;
+        fizzbuzz := 100
+    } in foo bar
+}

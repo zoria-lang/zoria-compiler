@@ -503,8 +503,8 @@ typeDef = withPos $ \pos -> do
     keyword "type"
     tName <- (TypeName <$> typeName) <?> "type name"
     params <- P.many (TypeVar <$> typeVariable <?> "type variable")
-    kindSig <- P.optional $ (symbol ":" *> kindSignature <?> "kind signature")
-    keyword "where"
+    kindSig <- P.optional (symbol ":" *> kindSignature) <?> "kind signature"
+    keyword "with"
     constructors <- P.some typeDefCase
     registerConstructors constructors
     return $ TDef tName params kindSig constructors pos
@@ -538,7 +538,7 @@ typeDefCase = withPos $ \pos -> do
 -- Add all type constructors to the parser state so that later they can
 -- be implicitly exported.
 registerConstructors :: [TypeCase] -> ParserIO ()
-registerConstructors = undefined
+registerConstructors = const $ return ()
 
 classDef :: ParserIO Class
 classDef = do 
@@ -753,7 +753,7 @@ typeName :: ParserIO T.Text
 typeName = (uppercaseName <|> symbol "[]") <?> "type name"
 
 typeVariable :: ParserIO T.Text
-typeVariable = lowercaseName <?> "type variable"
+typeVariable = P.try (lowercaseName <?> "type variable")
 
 -- Parser combinator that turns a parser of something into a parser of the
 -- same thing but between 'left' and 'right' separators (e.g parenthesis).
@@ -810,8 +810,9 @@ functionType = do
 
 -- Parser for parametrized types (e.g. Maybe a, f a b c)
 paramType :: ParserIO Type
-paramType = concreteParamType 
-        <|> polyParamType 
+paramType = polyParamType
+        <|> concreteParamType 
+        <|> atomicType
   where
     polyParamType :: ParserIO Type
     polyParamType = do
@@ -821,19 +822,23 @@ paramType = concreteParamType
             [] -> TypeVariable t
             _  -> PolymorphicParamType t args
     concreteParamType :: ParserIO Type
-    concreteParamType = (P.try $ PrimitiveType <$> primType) <|> do
-        t <- TypeName <$> typeName
-        args <- P.many (P.try atomicType)
-        return $ case args of
-            [] -> NonPrimType t
-            _  -> ParamType t args
+    concreteParamType = do
+        t <- atomicType
+        case t of
+            NonPrimType t' -> do
+                args <- P.many (P.try atomicType)
+                return $ case args of
+                    [] -> t
+                    _  -> ParamType t' args
+            _ -> return t
 
 -- Parser for types that are atomic (like type names or types in brackets)
 atomicType :: ParserIO Type
 atomicType = (P.try arrayType <?> "array type")
         <|> (P.try listType <?> "list type")
-        <|> (NonPrimType . TypeName <$> typeName <?> "type name")
-        <|> (TypeVariable . TypeVar <$> typeVariable <?> "type variable")
+        <|> (PrimitiveType <$> P.try primType) 
+        <|> (NonPrimType . TypeName <$> P.try typeName <?> "type name")
+        <|> (TypeVariable . TypeVar <$> P.try typeVariable <?> "type variable")
         <|> P.try (P.between (symbol "(") (symbol ")") type')
         <|> tupleType <?> "tuple type"
 

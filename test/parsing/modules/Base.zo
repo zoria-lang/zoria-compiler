@@ -3,8 +3,7 @@ module Base
 import Nested\Foo
 import DefaultOperatorTest
 import Foo\External {}
-
-alias FooBar a b : * -> * -> * = Either a b
+import Types
 
 let _ := 1 + 2 + 3
 

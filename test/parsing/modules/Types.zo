@@ -1,0 +1,20 @@
+module Types
+
+
+alias FooBar a b : * -> * -> * = Either a b
+
+let-infix :: 5 right
+type [] a with
+    case []
+    case (::) a [a]
+
+type Maybe a : * -> * with
+    case Just a 
+    case Nothing
+
+type Person with
+    case Person { name : String, age : Int }
+
+type Foo with
+    case Foo a b (c d) Int (Maybe [<String>])
+    case Bar
