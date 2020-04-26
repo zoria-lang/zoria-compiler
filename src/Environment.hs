@@ -8,5 +8,7 @@ import qualified Data.Map as M
 data Environment = Environment (M.Map Identifier Value)
 
 lookupVariableValue :: Identifier -> Environment -> Value
-lookupVariableValue id (Environment env) = env M.! id
+lookupVariableValue identifier (Environment env) = env M.! identifier
 
+defineVariableValue :: Identifier -> Value -> Environment -> Environment
+defineVariableValue identifier val (Environment env) = Environment (M.insert identifier val env)
