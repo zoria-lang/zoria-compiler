@@ -4,11 +4,30 @@ import Syntax
 import ValueSyntax
 
 import qualified Data.Map as M
+import qualified Data.Text as T
 
-data Environment = Environment (M.Map Identifier Value)
+newtype Environment = Environment (M.Map T.Text Value)
 
-lookupVariableValue :: Identifier -> Environment -> Value
-lookupVariableValue identifier (Environment env) = env M.! identifier
+emptyEnv :: Environment
+emptyEnv = Environment M.empty
 
-defineVariableValue :: Identifier -> Value -> Environment -> Environment
-defineVariableValue identifier val (Environment env) = Environment (M.insert identifier val env)
+searchEnvironment :: T.Text -> Environment -> Value
+searchEnvironment name (Environment env) = env M.! name
+
+lookupIdentifier :: Identifier -> Environment -> Value
+lookupIdentifier (Identifier name) = searchEnvironment name
+
+lookupTypeVar :: TypeVar -> Environment -> Value
+lookupTypeVar (TypeVar name) = searchEnvironment name
+
+lookupConstructorName :: ConstructorName -> Environment -> Value
+lookupConstructorName (ConstructorName name) = searchEnvironment name
+
+lookupTypeName :: TypeName -> Environment -> Value
+lookupTypeName (TypeName name) = searchEnvironment name
+
+lookupModName :: ModName -> Environment -> Value
+lookupModName (ModName name) = searchEnvironment name
+
+extendEnvironment :: T.Text -> Value -> Environment -> Environment
+extendEnvironment name val (Environment env) = Environment (M.insert name val env)

@@ -17,4 +17,5 @@ data PrimVal
     -- ^ () value
   deriving Show
 
-data Value = PrimitiveVal PrimVal | TupleVal [Value]
+data Value = PrimitiveVal PrimVal | UndeFinedVal
+  deriving Show
