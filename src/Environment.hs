@@ -1,12 +1,11 @@
 module Environment where
 
-import Syntax
-import ValueSyntax
+import           Syntax
+import           ValueSyntax
 
-import qualified Data.Map as M
-import qualified Data.Text as T
+import qualified Data.Map                      as M
+import qualified Data.Text                     as T
 
-newtype Environment = Environment (M.Map T.Text Value)
 
 emptyEnv :: Environment
 emptyEnv = Environment M.empty
@@ -30,4 +29,7 @@ lookupModName :: ModName -> Environment -> Value
 lookupModName (ModName name) = searchEnvironment name
 
 extendEnvironment :: T.Text -> Value -> Environment -> Environment
-extendEnvironment name val (Environment env) = Environment (M.insert name val env)
+extendEnvironment name val (Environment env) =
+    Environment (M.insert name val env)
+
+

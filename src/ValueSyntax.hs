@@ -1,6 +1,12 @@
 module ValueSyntax where
 
-import qualified Data.Text as T
+import qualified Data.Map                      as M
+import qualified Data.Text                     as T
+
+import Syntax
+
+newtype Environment = Environment (M.Map T.Text Value)
+    deriving Show
 
 data PrimVal
     = IntVal Int
@@ -17,5 +23,8 @@ data PrimVal
     -- ^ () value
   deriving Show
 
-data Value = PrimitiveVal PrimVal | UndeFinedVal
+data Value
+  = PrimitiveVal PrimVal
+  | Procedure  (Pattern ()) (Expr ()) Environment
+  | TupleVal [Value]
   deriving Show
