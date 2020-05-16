@@ -21,7 +21,7 @@ data PrimVal
     -- ^ boolean value
     | UnitVal
     -- ^ () value
-  deriving Show
+  deriving (Show, Eq)
 
 data Value
   = PrimitiveVal PrimVal

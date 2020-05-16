@@ -19,18 +19,24 @@ exprTypeError :: Show a => Expr a -> String -> b
 exprTypeError expr typeString =
     error $ "Expression" ++ show expr ++ "\nis not of type " ++ typeString
 
+evalPrimExpr :: PrimExpr -> PrimVal
+evalPrimExpr (IntLit   n) = IntVal n
+evalPrimExpr (CharLit  c) = CharVal c
+evalPrimExpr (FloatLit f) = FloatVal f
+evalPrimExpr (BoolLit  b) = BoolVal b
+evalPrimExpr UnitLit      = UnitVal
+
 evalPrimitive :: Expr a -> Environment -> IO Value
 evalPrimitive (Primitive primExpr _ _) env =
-    return $ PrimitiveVal $ evalPrimExpr primExpr  where
-    evalPrimExpr :: PrimExpr -> PrimVal
-    evalPrimExpr (IntLit   n) = IntVal n
-    evalPrimExpr (CharLit  c) = CharVal c
-    evalPrimExpr (FloatLit f) = FloatVal f
-    evalPrimExpr (BoolLit  b) = BoolVal b
-    evalPrimExpr UnitLit      = UnitVal
+    return $ PrimitiveVal $ evalPrimExpr primExpr
+
 
 evalVar :: Expr a -> Environment -> IO Value
 evalVar (Var identifier _ _) env = return $ lookupIdentifier identifier env
+
+evalConstructor :: Expr a -> Environment -> IO Value
+evalConstructor (Constructor constructorName _ _) env =
+    return $ lookupConstructorName constructorName env
 
 evalAnd :: Show a => Expr a -> Environment -> IO Value
 evalAnd (And leftExpr rightExpr _ _) env = do
@@ -107,6 +113,31 @@ evalArray (Array exprList _ _) env = do
     return $ TupleVal valList
 evalArray expr _ = exprTypeError expr "Array"
 
+matchPatternList :: [Pattern a] -> [Value] -> Maybe Environment
+matchPatternList [] [] = Just emptyEnvironment
+matchPatternList (pattern : restPatterns) (val : restVals) = do
+    firstMatch <- matchPattern pattern val
+    restMatch  <- matchPatternList restPatterns restVals
+    return (unionEnvironments firstMatch restMatch)
+
+matchPattern :: Pattern a -> Value -> Maybe Environment
+matchPattern (WildcardPattern{}) _ = Just emptyEnvironment
+matchPattern (ConstPattern primExpr _ _) (PrimitiveVal primVal)
+    | (evalPrimExpr primExpr) == primVal = Just emptyEnvironment
+    | otherwise                          = Nothing
+matchPattern ConstPattern{} _ = Nothing
+matchPattern (TuplePattern patternList _ _) (TupleVal valList)
+    | (length patternList) == (length valList) =
+        matchPatternList patternList valList
+    | otherwise = Nothing
+matchPattern TuplePattern{} _ = Nothing
+matchPattern (VarPattern identifier _ _) val =
+        Just $ insertIdentifier identifier val emptyEnvironment
+matchPattern (NamedPattern identifier pattern _ _) val = do
+    specificMatch <- matchPattern pattern val
+    return $ insertIdentifier identifier val specificMatch
+matchPattern (ConstructorPattern _ _ _ _) val = undefined -- !!!
+
 -- This next!!!
 apply :: Value -> Value -> IO Value
 apply (Procedure pattern body procEnv) env = undefined
@@ -117,10 +148,13 @@ evalApp (App operator argument _) env = do
     argVal <- eval argument env
     apply opVal argVal
 
+evalAnnotatedExpr :: Show a => Expr a -> Environment -> IO Value
+evalAnnotatedExpr (AnnotatedExpr expr _ _ _) env = eval expr env
+
 eval :: Show a => Expr a -> Environment -> IO Value
 eval expr@Primitive{}            env = evalPrimitive expr env
 eval expr@Var{}                  env = evalVar expr env
-eval expr@Constructor{}          env = undefined -- !!!
+eval expr@Constructor{}          env = evalConstructor expr env
 eval expr@QualifiedVar{}         env = undefined -- !!!
 eval expr@QualifiedConstructor{} env = undefined -- !!!
 eval expr@And{}                  env = evalAnd expr env
@@ -130,6 +164,11 @@ eval expr@Block{}                env = evalBlock expr env
 eval expr@Lambda{}               env = evalLambda expr env
 eval expr@Tuple{}                env = evalTuple expr env
 eval expr@App{}                  env = evalApp expr env
+eval expr@Match{}                env = undefined -- !!!
+eval expr@External{}             env = undefined -- !!!
+eval expr@Internal{}             env = undefined -- !!!
+eval expr@AnnotatedExpr{}        env = evalAnnotatedExpr expr env
+eval expr@FormatString{}         env = undefined -- !!!
 
 -- REMOVE LATER
 testPosition :: Utility.Position
@@ -141,7 +180,7 @@ e = Var (Identifier (T.pack "x")) testPosition 0
 e2 = Block [] testPosition 0
 
 env :: Environment
-env = extendEnvironment (T.pack "x") (PrimitiveVal (IntVal 3)) emptyEnv
+env = extendEnvironment (T.pack "x") (PrimitiveVal (IntVal 3)) emptyEnvironment
 
 e3 = Lambda
     (WildcardPattern testPosition 0)
@@ -154,3 +193,5 @@ e3 = Lambda
     testPosition
     3
 
+pattern = ConstPattern (IntLit 4) testPosition ()
+val = PrimitiveVal (IntVal 5)
