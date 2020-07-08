@@ -17,6 +17,15 @@ executable zoriac
   hs-source-dirs:      src
   main-is:             Main.hs
   other-modules:       Syntax
+                       Parser.ParserIO
+                       Parser.Common
+                       Parser.Program
+                       Parser.Identifier
+                       Parser.Type
+                       Parser.Definition
+                       Parser.Expression
+                       Parser.Pattern
+                       Parser.Primitive
                        Parser
                        GetOpt
                        Utility

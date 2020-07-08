@@ -1,0 +1,23 @@
+module Test
+
+let-infix + 7 left
+
+# lambda
+let _ := fn x => x
+
+# lambda z przypisaniem do zmiennej
+let f x := x
+# inaczej let f := fn x => x
+
+# aplikacja
+let _ := f 20
+
+# aplikacja lambdy
+let _ := (fn x => x) 42
+
+#:
+# skompilowany program:
+
+Program {programRoot = Module {moduleId = ModuleId {modulePrefix = [], moduleName = ModName "Test"}, modulePath = "test/parsing/Test.zo", moduleImports = [], moduleExports = Nothing, moduleDefs = [TopLevelLet (LetDef (Definition {letPattern = WildcardPattern (Position {posOffset = 51, posFile = "test/parsing/Test.zo"}) (), letTypeSig = Nothing, letExpr = Lambda (VarPattern (Identifier "x") (Position {posOffset = 59, posFile = "test/parsing/Test.zo"}) ()) (Var (Identifier "x") (Position {posOffset = 64, posFile = "test/parsing/Test.zo"}) ()) Nothing (Position {posOffset = 56, posFile = "test/parsing/Test.zo"}) (), letLoc = Position {posOffset = 51, posFile = "test/parsing/Test.zo"}})),TopLevelLet (LetDef (Definition {letPattern = VarPattern (Identifier "f") (Position {posOffset = 110, posFile = "test/parsing/Test.zo"}) (), letTypeSig = Nothing, letExpr = Lambda (VarPattern (Identifier "x") (Position {posOffset = 112, posFile = "test/parsing/Test.zo"}) ()) (Var (Identifier "x") (Position {posOffset = 117, posFile = "test/parsing/Test.zo"}) ()) (Just "f") (Position {posOffset = 110, posFile = "test/parsing/Test.zo"}) (), letLoc = Position {posOffset = 110, posFile = "test/parsing/Test.zo"}})),TopLevelLet (LetDef (Definition {letPattern = WildcardPattern (Position {posOffset = 169, posFile = "test/parsing/Test.zo"}) (), letTypeSig = Nothing, letExpr = App (Var (Identifier "f") (Position {posOffset = 174, posFile = "test/parsing/Test.zo"}) ()) (Primitive (IntLit 20) (Position {posOffset = 176, posFile = "test/parsing/Test.zo"}) ()) (), letLoc = Position {posOffset = 169, posFile = "test/parsing/Test.zo"}})),TopLevelLet (LetDef (Definition {letPattern = WildcardPattern (Position {posOffset = 206, posFile = "test/parsing/Test.zo"}) (), letTypeSig = Nothing, letExpr = App (Lambda (VarPattern (Identifier "x") (Position {posOffset = 215, posFile = "test/parsing/Test.zo"}) ()) (Var (Identifier "x") (Position {posOffset = 220, posFile = "test/parsing/Test.zo"}) ()) Nothing (Position {posOffset = 212, posFile = "test/parsing/Test.zo"}) ()) (Primitive (IntLit 42) (Position {posOffset = 223, posFile = "test/parsing/Test.zo"}) ()) (), letLoc = Position {posOffset = 206, posFile = "test/parsing/Test.zo"}}))]}}
+
+:#

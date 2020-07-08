@@ -77,12 +77,12 @@ instance PrettyPrint (FormatExpr a) where
         indent i <> "{" <> prettyPrint 0 expr <> "}"
 
 instance PrettyPrint PrimExpr where
-    prettyPrint i (IntLit int) = indent i <> T.pack (show int)
-    prettyPrint i (CharLit c) = indent i <> "'" <> T.cons c "'"
-    prettyPrint i (FloatLit f) = indent i <> T.pack (show f)
+    prettyPrint i (IntLit int)  = indent i <> T.pack (show int)
+    prettyPrint i (CharLit c)   = indent i <> "'" <> T.cons c "'"
+    prettyPrint i (FloatLit f)  = indent i <> T.pack (show f)
     prettyPrint i (StringLit s) = indent i <> "\"" <> s <> "\""
-    prettyPrint i (BoolLit b) = indent i <> T.pack (show b)
-    prettyPrint i UnitLit = indent i <> "()"
+    prettyPrint i (BoolLit b)   = indent i <> T.pack (show b)
+    prettyPrint i UnitLit       = indent i <> "()"
 
 instance PrettyPrint TypeSig where
     prettyPrint i (TypeSig constraints typeSig) =
@@ -115,13 +115,13 @@ instance PrettyPrint Type where
         indent i <> "[<" <> prettyPrint 0 t <> ">]"
 
 instance PrettyPrint PrimType where
-    prettyPrint i IntT = indent i <> "Int"
-    prettyPrint i FloatT = indent i <> "Float"
+    prettyPrint i IntT    = indent i <> "Int"
+    prettyPrint i FloatT  = indent i <> "Float"
     prettyPrint i StringT = indent i <> "String"
-    prettyPrint i CharT = indent i <> "Char"
-    prettyPrint i BoolT = indent i <> "Bool"
-    prettyPrint i UnitT = indent i <> "()"
-    prettyPrint i CPtrT = indent i <> "CPtr"
+    prettyPrint i CharT   = indent i <> "Char"
+    prettyPrint i BoolT   = indent i <> "Bool"
+    prettyPrint i UnitT   = indent i <> "()"
+    prettyPrint i CPtrT   = indent i <> "CPtr"
 
 instance PrettyPrint (Pattern a) where
     prettyPrint i (NamedPattern (Identifier name) pattern _ _) =

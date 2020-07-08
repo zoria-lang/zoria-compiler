@@ -5,7 +5,22 @@ import DefaultOperatorTest
 import Foo\External {}
 import Types
 
+# TODO: fix
+let _ := (100 +)
+# TODO: fix
+let _ := 1 + -2
+
+
 let _ := 1 + 2 + 3
+
+let foo := (+ 10)
+let bar := (-20)
+let foobar := (- 20)
+let asd := (`Constructor` -42)
+
+let _ := -0x2A + 1
+
+let tuple := (1,2,"asd")
 
 let-infix ^ 2 right
 
