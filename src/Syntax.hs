@@ -83,8 +83,8 @@ data TAlias = TAlias
     { aliasName   :: TypeName
     , aliasParams :: [TypeVar]
     , aliasKind   :: Maybe KindSig
-    , aliasType   :: TypeSig
-    , alisLoc     :: Position
+    , aliasType   :: Type
+    , aliasLoc    :: Position
     }
   deriving Show
 
@@ -147,7 +147,7 @@ data PrimType
 data TypeCase
     = TypeCaseRecord ConstructorName RecordType Position
     -- ^ constructor of a record
-    | TypeCase ConstructorName [TypeSig] Position
+    | TypeCase ConstructorName [Type] Position
     -- ^ normal constructor (e.g. 'Just a')
   deriving (Show, Eq, Ord)
 
@@ -156,7 +156,7 @@ newtype RecordType = RecordType [RecordField] deriving (Show, Eq, Ord)
 
 data RecordField = RecordField
     { recordFieldName :: Identifier
-    , recordFieldType :: TypeSig
+    , recordFieldType :: Type
     }
   deriving (Show, Eq, Ord)
 
