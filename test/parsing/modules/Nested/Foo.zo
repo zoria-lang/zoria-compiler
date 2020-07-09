@@ -1,5 +1,0 @@
-module Foo
-
-import Another
-
-let-infix + 5 left

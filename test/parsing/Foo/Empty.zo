@@ -1,8 +1,0 @@
-module Empty {Test{(::), Constructor}, (++)}
-
-import Bar {Test{(::)}} as B
-
-let-infix `Constructor` 9 left
-
-
-let-infix ++ 3 left

@@ -26,6 +26,7 @@ executable zoriac
                        Parser.Expression
                        Parser.Pattern
                        Parser.Primitive
+                       Parser.ModuleResolver
                        Parser
                        GetOpt
                        Utility

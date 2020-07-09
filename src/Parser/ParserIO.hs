@@ -33,23 +33,27 @@ type Errors   = P.ParseErrorBundle T.Text Void
 
 -- State used by StateT in the parser.
 data ParserState = ParserState
-    { stateCurrentOps   :: !LocalOperators
+    { stateCurrentOps    :: !LocalOperators
     -- ^ operators visible in the currently parsed file
-    , stateLocalTypeOps :: !(Map.Map TypeName [CustomOperator])
-    -- ^ operator constructors visible in the currently parser dile
-    , stateLocalOps     :: ![CustomOperator]
+    , stateLocalTypeOps  :: !LocalConstructors
+    -- ^ operator constructors visible in the currently parsed file
+    , stateGlobalTypeOps :: !GlobalConstructors
+    -- ^ operator constructors visible in the global scope
+    , stateLocalOps      :: ![CustomOperator]
     -- ^ list of operators defined within the current module
-    , stateExportedOps  :: !GlobalOperators
+    , stateExportedOps   :: !GlobalOperators
     -- ^ operators that are exported by some files
-    , stateVisited      :: !(Map.Map FilePath (Module ()))
+    , stateVisited       :: !(Map.Map FilePath (Module ()))
     -- ^ modules that were already parsed which allows us to parse them once
-    , stateModuleStack  :: ![(ModName, FilePath)]
+    , stateModuleStack   :: ![(ModName, FilePath)]
     -- ^ stack used to keep track of current file path and to detect cycles
     }
   deriving Show
 
 type LocalOperators  = Map.Map (Priority, Fixity) [CustomOperator]
 type GlobalOperators = Map.Map FilePath [(CustomOperator, Priority, Fixity)]
+type LocalConstructors = Map.Map TypeName [CustomOperator]
+type GlobalConstructors = Map.Map FilePath LocalConstructors
 
 -- Custom operator priority. Should be be in range 1..10.
 type Priority = Int
@@ -76,12 +80,13 @@ type RawImport = (ModuleId, Maybe ModName, Maybe [Located ImportedValue])
 -- Fresh state for the parser's internal StateT monad
 newParserState :: ParserState
 newParserState = ParserState
-    { stateCurrentOps   = Map.empty
-    , stateLocalTypeOps = Map.empty
-    , stateLocalOps     = []
-    , stateExportedOps  = Map.empty
-    , stateVisited      = Map.empty
-    , stateModuleStack  = []
+    { stateCurrentOps    = Map.empty
+    , stateLocalTypeOps  = Map.empty
+    , stateGlobalTypeOps = Map.empty
+    , stateLocalOps      = []
+    , stateExportedOps   = Map.empty
+    , stateVisited       = Map.empty
+    , stateModuleStack   = []
     }
 
 -- Function used to simplyfy running the parser monad stack.

@@ -1,0 +1,25 @@
+module Main {main}
+
+#: All of those should import the operator
+import Another {Type{Constructor, (:+)}}
+import Another {Type{(:+)}}
+import Another {Type}
+:# 
+
+import Another
+
+#: should not import 
+import Another {}
+import Another {Type{}}
+import Another {Type{Constructor}}
+:#
+
+#:
+    The following should be parsed as
+        1 :+ (2 :+ (3 :+ (4 :+ 5)))
+    instead of
+        (((1 :+ 2) :+ 3) :+ 4) :+ 5
+:#
+
+let main _ := 1 :+ 2 :+ 3 :+ 4 :+ 5
+

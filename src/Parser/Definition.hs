@@ -9,13 +9,15 @@ import Parser.Expression
 import Parser.Pattern
 import Syntax
 import Utility (Position(..))
+import Control.Monad (mapM_, when)
 import Control.Applicative ((<|>))
 import Text.Megaparsec ((<?>))
-import Control.Monad (when)
+import Data.Maybe (maybeToList)
 import Data.Functor (($>))
 import qualified Text.Megaparsec.Char.Lexer as L
 import qualified Text.Megaparsec as P
 import qualified Data.Text as T
+import qualified Data.Map.Strict as Map
 
 -- Parser for top-level definitions (types, classes, instances, let, etc.)
 topLevelDef :: ParserIO (Maybe (TopLevelDef ()))
@@ -36,7 +38,7 @@ typeDef = withPos $ \pos -> do
     kindSig <- P.optional (symbol ":" *> kindSignature) <?> "kind signature"
     keyword "with"
     constructors <- P.some typeDefCase
-    registerConstructors constructors
+    registerConstructors tName constructors
     return $ TDef tName params kindSig constructors pos
   where
     -- Parser for a single constructor in type definition (e.g. case Nothing).
@@ -66,10 +68,24 @@ typeDef = withPos $ \pos -> do
             return $ TypeCase name params pos
     -- Add all type constructors to the parser state so that later they can
     -- be implicitly exported.
-    -- TODO: implement
-    registerConstructors :: [TypeCase] -> ParserIO ()
-    registerConstructors = const $ return ()
-
+    registerConstructors :: TypeName -> [TypeCase] -> ParserIO ()
+    registerConstructors t cases = do
+        stateOps <- stateCurrentOps <$> getState
+        let constructors = filter (isOp $ foldr (++) [] stateOps) cases'
+        mapM_ (registerConstructor t) constructors
+      where
+        cases' = map caseConstructorName cases
+        caseConstructorName (TypeCaseRecord (ConstructorName name) _ _) = name
+        caseConstructorName (TypeCase (ConstructorName name) _ _ ) = name
+    -- Add a single constructor to the parser state
+    registerConstructor :: TypeName -> T.Text -> ParserIO ()
+    registerConstructor t name = do
+        state <- getState
+        let typeOpsMap = stateLocalTypeOps state
+            prevConstructors = Map.lookup t typeOpsMap
+            prevConstructorsList = concat $ maybeToList prevConstructors
+            newList = (ConstrOperator name) : prevConstructorsList
+        putState $ state { stateLocalTypeOps = Map.insert t newList typeOpsMap }
 
 classDef :: ParserIO Class
 classDef = do 

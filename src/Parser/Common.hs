@@ -11,6 +11,7 @@ import Data.Maybe (isJust)
 import System.FilePath.Posix ((</>), (<.>))
 import Syntax
 import Text.Megaparsec ((<?>))
+import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
@@ -149,3 +150,12 @@ separatedList start end elem sep = P.between start' end' (P.sepBy elem sep')
 -- same thing but between 'left' and 'right' separators (e.g parenthesis).
 surroundedBy :: T.Text -> ParserIO a -> T.Text -> ParserIO a
 surroundedBy left parser right = symbol left *> parser <* symbol right
+
+-- Remove the file-specific parts of the parser state
+clearLocalParserState :: ParserIO ()
+clearLocalParserState = do
+    state <- getState
+    putState $ state { stateCurrentOps   = Map.empty
+                     , stateLocalOps     = [] 
+                     , stateLocalTypeOps = Map.empty
+                     }

@@ -1,3 +1,0 @@
-module OtherEmpty {someName}
-
-import Foo\Empty as FooEmpty

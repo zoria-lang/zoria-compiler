@@ -187,7 +187,7 @@ constructorOperator = lexeme $ do
 
 -- Function which given a predicate on custom operators creates a parser that
 -- matches this kind of operators with the given priority and fixity.
-kindOfOperator :: (CustomOperator -> Bool) 
+kindOfOperator :: (CustomOperator -> Bool)
                 -> Priority 
                 -> Fixity 
                 -> ParserIO T.Text
@@ -231,3 +231,10 @@ customOperator = ConstrOperator <$> constructorOperator
             <|> PrefixConstrOperator <$> 
                 (P.try $ surroundedBy "`" uppercaseName "`")
             <|> PrefixVarOperator <$> surroundedBy "`" lowercaseName "`"
+
+-- Checks if something is an operator.
+-- It must either have an operator character at the beginning or be
+-- defined in the local operator table in case of prefix identifiers.
+isOp :: [CustomOperator] -> T.Text -> Bool
+isOp table name = (T.head name `elem` (':' : operatorCharsList))
+                || name `elem` (unwrapOperator <$> table)

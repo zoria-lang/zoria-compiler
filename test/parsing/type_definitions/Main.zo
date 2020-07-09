@@ -1,0 +1,7 @@
+module Main
+
+# record test
+type Point with
+    case Point3D { x : Int, y : Int, z : Int }
+    case Point2D { x : Int, y : Int }
+    case Point1D Int
