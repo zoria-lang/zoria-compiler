@@ -22,7 +22,7 @@ program :: ParserIO (Program ())
 program = do
     -- TODO: import prelude
     rootFile <- head . optInputs <$> getopt
-    Program <$> file rootFile module'
+    Program <$> parseFile rootFile module'
 
 -- Parser for modules. The job of file parser is delegated here.
 module' :: FilePath -> ParserIO (Module())
@@ -55,7 +55,6 @@ import' = do
     list  <- moduleIdentifierList
     alias <- P.optional $ keyword "as" *> (uppercaseName <?> "module synonym")
     return (name, ModName <$> alias, list)
-
 
 -- Parser for import lists. Despite the name it is also used to parse
 -- the export lists. The lists are optional so it returns Maybe.

@@ -23,6 +23,44 @@ import System.FilePath.Posix ( takeFileName
                              , (</>)
                              )
 
+-- Parser of files. Given the file path it parses it into a module using given
+-- module parser. The module parser is only passed here to achieve Dependency
+-- Inversion and a cyclic module dependency.
+parseFile :: FilePath 
+          -> (FilePath -> ParserIO (Module ())) 
+          -> ParserIO (Module ())
+parseFile path moduleParser = do
+    assertNoCycle path
+    visited <- stateVisited <$> getState
+    case Map.lookup path visited of
+        Nothing -> do
+            file   <- liftIO $ T.readFile path
+            clearLocalParserState
+            result <- liftState $ P.runParserT (moduleParser path) path file
+            -- TODO: maybe handle errors with 'region'
+            mod   <- handleError result
+            state <- getState
+            let newState = state { stateVisited = Map.insert path mod visited }
+            putState newState
+            return mod
+        Just mod ->
+            return mod
+  where
+    -- Handler for errors from submodules
+    handleError :: Either Errors (Module ()) -> ParserIO (Module ())
+    handleError (Right mod) = return mod
+    handleError (Left err) = liftIO $ 
+        putStrLn (P.errorBundlePretty err) >> exitFailure
+    -- Function for detection of import cycles, which are forbidden.
+    assertNoCycle :: FilePath -> ParserIO ()
+    assertNoCycle path = do
+        pathStack <- map snd . stateModuleStack <$> getState
+        when (path `elem` pathStack) $
+            -- TODO: ^ handle it better and find the actual module name
+            fail $ "detected cyclic dependency: file " 
+                ++ show path 
+                ++ " was previously included in a module it depends on"
+
 -- Find the path of a given module. The module name is divided into the
 -- prefix (e.g. Data\Map) and the file name (e.g Strict). It may fail.
 findModulePath :: FilePath -> [ModName] -> ModName -> ParserIO FilePath
@@ -58,42 +96,6 @@ findModulePath current prefix name = do
     appendModName :: FilePath -> FilePath
     appendModName path = path </> T.unpack (unwrapName name) <.> fileExtension
 
--- Parser of files. Given the file path it parses it into a module using given
--- module parser. The module parser is only passed here to achieve Dependency
--- Inversion and a cyclic module dependency.
-file :: FilePath -> (FilePath -> ParserIO (Module ())) -> ParserIO (Module ())
-file path moduleParser = do
-    assertNoCycle path
-    visited <- stateVisited <$> getState
-    case Map.lookup path visited of
-        Nothing -> do
-            file   <- liftIO $ T.readFile path
-            clearLocalParserState
-            result <- liftState $ P.runParserT (moduleParser path) path file
-            -- TODO: maybe handle errors with 'region'
-            mod   <- handleError result
-            state <- getState
-            let newState = state { stateVisited = Map.insert path mod visited }
-            putState newState
-            return mod
-        Just mod ->
-            return mod
-  where
-    -- Handler for errors from submodules
-    handleError :: Either Errors (Module ()) -> ParserIO (Module ())
-    handleError (Right mod) = return mod
-    handleError (Left err) = liftIO $ 
-        putStrLn (P.errorBundlePretty err) >> exitFailure
-    -- Function for detection of import cycles, which are forbidden.
-    assertNoCycle :: FilePath -> ParserIO ()
-    assertNoCycle path = do
-        pathStack <- map snd . stateModuleStack <$> getState
-        when (path `elem` pathStack) $
-            -- TODO: ^ handle it better and find the actual module name
-            fail $ "detected cyclic dependency: file " 
-                ++ show path 
-                ++ " was previously included in a module it depends on"
-
 -- Given the import information locate and parse a submodule.
 importFile :: (FilePath -> ParserIO (Module ())) 
            -> Located RawImport
@@ -102,7 +104,7 @@ importFile moduleParser (Located position (id, alias, identifiers)) = do
     let (ModuleId prefix mod) = id
     basePath <- getCurrentPath
     path     <- findModulePath basePath prefix mod
-    mod      <- file path moduleParser
+    mod      <- parseFile path moduleParser
     return $ Import mod id alias position identifiers
 
 -- Brings operators from a module into the current scope.
@@ -153,7 +155,9 @@ strip (ImportedType _ Nothing) = [] -- TODO: import everything
 strip (ImportedType _ (Just constructors)) = 
     map (\(ConstructorName name) -> name) constructors    
 
-getImplicitConstructors :: ImportedValue -> IO [T.Text]
+-- Extracts the list of constructors which should be imported based on the
+-- given import statement.
+getImplicitConstructors :: ImportedValue -> ParserIO [T.Text]
 getImplicitConstructors = undefined -- TODO: implement
 
 -- Add the constructor information to the global table. Only the exported
@@ -222,7 +226,7 @@ importOperatorsFromImports = mapM_ importOperators
 -- to the global state and clear the state
 finalizeModule :: Maybe [Located ImportedValue] -> ParserIO ()
 finalizeModule exports = do
-    -- exportConstructors
+    exportConstructors
     exportOperators exports -- at the end we update the operator table
     clearLocalParserState
 
