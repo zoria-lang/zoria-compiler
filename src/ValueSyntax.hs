@@ -27,4 +27,5 @@ data Value
   = PrimitiveVal PrimVal
   | Procedure  (Pattern ()) (Expr ()) Environment
   | TupleVal [Value]
+  | CustomType ConstructorName [Value]
   deriving Show

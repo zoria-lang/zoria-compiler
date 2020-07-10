@@ -115,6 +115,8 @@ evalArray expr _ = exprTypeError expr "Array"
 
 matchPatternList :: [Pattern a] -> [Value] -> Maybe Environment
 matchPatternList [] [] = Just emptyEnvironment
+matchPatternList [] _ = Nothing
+matchPatternList _ [] = Nothing
 matchPatternList (pattern : restPatterns) (val : restVals) = do
     firstMatch <- matchPattern pattern val
     restMatch  <- matchPatternList restPatterns restVals
@@ -136,17 +138,33 @@ matchPattern (VarPattern identifier _ _) val =
 matchPattern (NamedPattern identifier pattern _ _) val = do
     specificMatch <- matchPattern pattern val
     return $ insertIdentifier identifier val specificMatch
-matchPattern (ConstructorPattern _ _ _ _) val = undefined -- !!!
+matchPattern (ConstructorPattern patternConstructorName patterns _ _)
+            (CustomType valConstructorName values)
+    | patternConstructorName == valConstructorName = matchPatternList patterns values
+    | otherwise = Nothing
 
 -- This next!!!
 apply :: Value -> Value -> IO Value
-apply (Procedure pattern body procEnv) env = undefined
+apply (Procedure pattern body procEnv) argument = 
+    case matchPattern pattern argument of
+        Just applyEnv -> eval body (unionEnvironments procEnv applyEnv)
 
 evalApp :: Show a => Expr a -> Environment -> IO Value
 evalApp (App operator argument _) env = do
     opVal  <- eval operator env
     argVal <- eval argument env
     apply opVal argVal
+evalApp expr _ = exprTypeError expr "App"
+
+evalMatch :: Show a => Expr a -> Environment -> IO Value
+evalMatch (Match expr matchCases _ _) env =  do
+    value <- eval expr env
+    firstMatch value matchCases env where
+        firstMatch _ [] env = error "No match"
+        firstMatch val ((MatchCase pattern body):nextCases) env =
+            case matchPattern pattern val of
+                (Just applyEnv) -> eval body (unionEnvironments applyEnv env)
+                Nothing -> firstMatch val nextCases env            
 
 evalAnnotatedExpr :: Show a => Expr a -> Environment -> IO Value
 evalAnnotatedExpr (AnnotatedExpr expr _ _ _) env = eval expr env
@@ -154,7 +172,7 @@ evalAnnotatedExpr (AnnotatedExpr expr _ _ _) env = eval expr env
 eval :: Show a => Expr a -> Environment -> IO Value
 eval expr@Primitive{}            env = evalPrimitive expr env
 eval expr@Var{}                  env = evalVar expr env
-eval expr@Constructor{}          env = evalConstructor expr env
+eval expr@Constructor{}          env = evalConstructor expr env  -- tego nie jestem pewien
 eval expr@QualifiedVar{}         env = undefined -- !!!
 eval expr@QualifiedConstructor{} env = undefined -- !!!
 eval expr@And{}                  env = evalAnd expr env
@@ -164,7 +182,8 @@ eval expr@Block{}                env = evalBlock expr env
 eval expr@Lambda{}               env = evalLambda expr env
 eval expr@Tuple{}                env = evalTuple expr env
 eval expr@App{}                  env = evalApp expr env
-eval expr@Match{}                env = undefined -- !!!
+eval expr@Match{}                env = evalMatch expr env
+    -- ^dzisiaj skończone, nie wszystko przetestowane
 eval expr@External{}             env = undefined -- !!!
 eval expr@Internal{}             env = undefined -- !!!
 eval expr@AnnotatedExpr{}        env = evalAnnotatedExpr expr env
