@@ -123,7 +123,7 @@ matchPatternList (pattern : restPatterns) (val : restVals) = do
     return (unionEnvironments firstMatch restMatch)
 
 matchPattern :: Pattern a -> Value -> Maybe Environment
-matchPattern (WildcardPattern{}) _ = Just emptyEnvironment
+matchPattern (WildcardPattern _ _) _ = Just emptyEnvironment
 matchPattern (ConstPattern primExpr _ _) (PrimitiveVal primVal)
     | (evalPrimExpr primExpr) == primVal = Just emptyEnvironment
     | otherwise                          = Nothing
@@ -142,6 +142,7 @@ matchPattern (ConstructorPattern patternConstructorName patterns _ _)
             (CustomType valConstructorName values)
     | patternConstructorName == valConstructorName = matchPatternList patterns values
     | otherwise = Nothing
+matchPattern (ConstructorPattern {}) _ = Nothing
 
 -- This next!!!
 apply :: Value -> Value -> IO Value
@@ -172,7 +173,7 @@ evalAnnotatedExpr (AnnotatedExpr expr _ _ _) env = eval expr env
 eval :: Show a => Expr a -> Environment -> IO Value
 eval expr@Primitive{}            env = evalPrimitive expr env
 eval expr@Var{}                  env = evalVar expr env
-eval expr@Constructor{}          env = evalConstructor expr env  -- tego nie jestem pewien
+eval expr@Constructor{}          env = evalConstructor expr env
 eval expr@QualifiedVar{}         env = undefined -- !!!
 eval expr@QualifiedConstructor{} env = undefined -- !!!
 eval expr@And{}                  env = evalAnd expr env
@@ -183,7 +184,6 @@ eval expr@Lambda{}               env = evalLambda expr env
 eval expr@Tuple{}                env = evalTuple expr env
 eval expr@App{}                  env = evalApp expr env
 eval expr@Match{}                env = evalMatch expr env
-    -- ^dzisiaj skończone, nie wszystko przetestowane
 eval expr@External{}             env = undefined -- !!!
 eval expr@Internal{}             env = undefined -- !!!
 eval expr@AnnotatedExpr{}        env = evalAnnotatedExpr expr env
@@ -202,15 +202,57 @@ env :: Environment
 env = extendEnvironment (T.pack "x") (PrimitiveVal (IntVal 3)) emptyEnvironment
 
 e3 = Lambda
-    (WildcardPattern testPosition 0)
-    (And (Primitive (BoolLit True) testPosition 1)
-         (Primitive (BoolLit True) testPosition 1)
+    (WildcardPattern testPosition ())
+    (And (Primitive (BoolLit True) testPosition ())
+         (Primitive (BoolLit True) testPosition ())
          testPosition
-         1
+         ()
     )
     Nothing
     testPosition
-    3
+    ()
 
+pattern :: Pattern ()
 pattern = ConstPattern (IntLit 4) testPosition ()
-val = PrimitiveVal (IntVal 5)
+
+-- val :: Value
+-- val = PrimitiveVal (IntVal 5)
+
+t :: Expr ()
+t = Tuple [Tuple [Primitive (IntLit 1) testPosition (),
+                Primitive (IntLit 2) testPosition ()
+                ] testPosition (),
+                Primitive (IntLit 3) testPosition ()
+                ] testPosition ()--,
+        -- Primitive (BoolLit False) testPosition ()
+        -- Primitive (FloatLit 4.5) testPosition ()] testPosition ()
+
+
+makeIdentifier :: String -> Identifier
+makeIdentifier str = (Identifier (T.pack str))
+
+identifiers = map makeIdentifier ["x","y"] --,"z"]
+
+varPatterns = map (\id -> VarPattern id testPosition ()) identifiers
+
+tp = TuplePattern varPatterns testPosition ()
+
+tp2 = TuplePattern [tp, VarPattern (makeIdentifier "z") testPosition ()] testPosition ()
+
+namedPatternExample = NamedPattern (makeIdentifier "tuple") tp2 testPosition ()
+
+vals = eval t emptyEnvironment
+
+result = do
+    v <- vals 
+    return $ matchPattern tp2 v
+
+
+result2 = do
+    v <- vals 
+    return $ matchPattern namedPatternExample v
+
+
+cp = ConstPattern (IntLit 3) testPosition ()
+
+cpTest = matchPattern cp (PrimitiveVal (IntVal 3))
