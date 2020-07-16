@@ -26,17 +26,29 @@ evalPrimExpr (FloatLit f) = FloatVal f
 evalPrimExpr (BoolLit  b) = BoolVal b
 evalPrimExpr UnitLit      = UnitVal
 
-evalPrimitive :: Expr a -> Environment -> IO Value
+evalPrimitive :: Show a => Expr a -> Environment -> IO Value
 evalPrimitive (Primitive primExpr _ _) env =
     return $ PrimitiveVal $ evalPrimExpr primExpr
+evalPrimitive expr _ = exprTypeError expr "Primitive"
 
 
-evalVar :: Expr a -> Environment -> IO Value
+evalVar :: Show a => Expr a -> Environment -> IO Value
 evalVar (Var identifier _ _) env = return $ lookupIdentifier identifier env
 
-evalConstructor :: Expr a -> Environment -> IO Value
+evalConstructor :: Show a => Expr a -> Environment -> IO Value
 evalConstructor (Constructor constructorName _ _) env =
     return $ lookupConstructorName constructorName env
+evalConstructor expr _ = exprTypeError expr "constructor"
+
+evalQualifiedVar :: Show a => Expr a -> Environment -> IO Value
+evalQualifiedVar (QualifiedVar modName identifier _ _) env = 
+    return $ lookupQualifiedVar modName identifier env
+evalQualifiedVar expr _ = exprTypeError expr "QualifiedVar"
+
+evalQualifiedConstructor :: Show a => Expr a -> Environment -> IO Value
+evalQualifiedConstructor (QualifiedConstructor modName constructorName _ _) env= 
+    return $ lookupQualifiedConstructor modName constructorName env
+evalQualifiedConstructor expr _ = exprTypeError expr "QualifiedConstructor"
 
 evalAnd :: Show a => Expr a -> Environment -> IO Value
 evalAnd (And leftExpr rightExpr _ _) env = do
@@ -144,11 +156,11 @@ matchPattern (ConstructorPattern patternConstructorName patterns _ _)
     | otherwise = Nothing
 matchPattern (ConstructorPattern {}) _ = Nothing
 
--- This next!!!
 apply :: Value -> Value -> IO Value
 apply (Procedure pattern body procEnv) argument = 
     case matchPattern pattern argument of
         Just applyEnv -> eval body (unionEnvironments procEnv applyEnv)
+-- apply to constructor?
 
 evalApp :: Show a => Expr a -> Environment -> IO Value
 evalApp (App operator argument _) env = do
@@ -165,7 +177,16 @@ evalMatch (Match expr matchCases _ _) env =  do
         firstMatch val ((MatchCase pattern body):nextCases) env =
             case matchPattern pattern val of
                 (Just applyEnv) -> eval body (unionEnvironments applyEnv env)
-                Nothing -> firstMatch val nextCases env            
+                Nothing -> firstMatch val nextCases env
+
+evalExternal :: Show a => Expr a -> Environment -> IO Value
+evalExternal (External filePath name _ _) env = undefined
+-- TODO: Parse external file and find identifier value??
+evalExternal expr _ = exprTypeError expr "External"
+
+evalInternal :: Show a => Expr a -> Environment -> IO Value
+evalInternal (Internal identifier _ _) env = 
+    return $ lookupInternal identifier env
 
 evalAnnotatedExpr :: Show a => Expr a -> Environment -> IO Value
 evalAnnotatedExpr (AnnotatedExpr expr _ _ _) env = eval expr env
@@ -174,8 +195,8 @@ eval :: Show a => Expr a -> Environment -> IO Value
 eval expr@Primitive{}            env = evalPrimitive expr env
 eval expr@Var{}                  env = evalVar expr env
 eval expr@Constructor{}          env = evalConstructor expr env
-eval expr@QualifiedVar{}         env = undefined -- !!!
-eval expr@QualifiedConstructor{} env = undefined -- !!!
+eval expr@QualifiedVar{}         env = evalQualifiedVar expr env
+eval expr@QualifiedConstructor{} env = evalQualifiedConstructor expr env
 eval expr@And{}                  env = evalAnd expr env
 eval expr@Or{}                   env = evalOr expr env
 eval expr@If{}                   env = evalIf expr env
@@ -184,8 +205,8 @@ eval expr@Lambda{}               env = evalLambda expr env
 eval expr@Tuple{}                env = evalTuple expr env
 eval expr@App{}                  env = evalApp expr env
 eval expr@Match{}                env = evalMatch expr env
-eval expr@External{}             env = undefined -- !!!
-eval expr@Internal{}             env = undefined -- !!!
+eval expr@External{}             env = evalExternal expr env
+eval expr@Internal{}             env = evalInternal expr env
 eval expr@AnnotatedExpr{}        env = evalAnnotatedExpr expr env
 eval expr@FormatString{}         env = undefined -- !!!
 

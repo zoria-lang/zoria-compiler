@@ -25,8 +25,17 @@ lookupConstructorName (ConstructorName name) = searchEnvironment name
 lookupTypeName :: TypeName -> Environment -> Value
 lookupTypeName (TypeName name) = searchEnvironment name
 
-lookupModName :: ModName -> Environment -> Value
-lookupModName (ModName name) = searchEnvironment name
+-- lookupModName :: ModName -> Environment -> Value
+-- lookupModName (ModName name) = searchEnvironment name
+
+lookupQualifiedVar :: ModName -> Identifier -> Environment -> Value
+lookupQualifiedVar modName identifier env = undefined
+
+lookupQualifiedConstructor :: ModName -> ConstructorName -> Environment -> Value
+lookupQualifiedConstructor modName constructorName env = undefined 
+
+lookupInternal :: Identifier -> Environment -> Value
+lookupInternal identifier env = undefined
 
 extendEnvironment :: T.Text -> Value -> Environment -> Environment
 extendEnvironment name val (Environment env) =
