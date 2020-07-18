@@ -7,9 +7,9 @@ where
 
 import System.Console.GetOpt
 import qualified Data.Text as T
-import System.Exit (exitWith, ExitCode(ExitSuccess))
+import System.Exit (exitSuccess)
 import System.Environment (getProgName, getArgs)
-import Control.Monad (when)
+import Control.Monad (when, unless)
 
 
 data Options = Options
@@ -63,14 +63,14 @@ options =
     , Option "V" ["version"] 
         (NoArg (\_ -> do
             putStrLn "Version 0.1.0.0" -- TODO: embed the version from *.cabal
-            exitWith ExitSuccess
+            exitSuccess
         ))
         "Print program version"
     , Option "h" ["help"]
         (NoArg (\_ -> do
             progName <- getProgName
             putStrLn (usageInfo progName options)
-            exitWith ExitSuccess
+            exitSuccess
         ))
         "Show help"
     , Option "m" ["module"]
@@ -89,6 +89,6 @@ getOptions = do
     opts <- foldl (>>=) (return defaultOptions) optActions
     when (null nonOptions) $
         ioError (userError "No input files specified!")
-    when (not . null $ errors) $
+    unless (null errors) $
         ioError (userError $ concat errors)
     return $ opts { optInputs = nonOptions }
