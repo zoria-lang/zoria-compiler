@@ -16,6 +16,7 @@ extra-source-files:  README.md
 library
     hs-source-dirs:     src
     exposed-modules:    GetOpt,
+                        GetOpt.Internal,
                         Syntax,
                         Utility
     ghc-options:        -Wunused-imports
@@ -36,7 +37,7 @@ test-suite unit-tests
     type:               exitcode-stdio-1.0
     main-is:            Main.hs
     hs-source-dirs:     test/unit
-    other-modules:      Example
+    other-modules:      GetOptTests
     build-depends:      zoria-lang,
                         base >= 4.7 && < 5,
                         HTF >= 0.14.0.3
