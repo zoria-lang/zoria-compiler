@@ -113,7 +113,7 @@ testParser parser input = do
     result <- parsingResult
     case result of
         Left err     -> putStrLn $ P.errorBundlePretty err
-        Right result -> putStrLn $ show result
+        Right result -> print result
   where
     emptyOpts = Options "" [] []
     parsingResult = runParser parser "" input newParserState emptyOpts

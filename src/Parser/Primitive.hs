@@ -29,21 +29,21 @@ primExpr = lexeme $ (P.try float <?> "float literal")
 
 -- Parser for floating point numbers.
 float :: ParserIO PrimExpr
-float = L.signed (pure ()) L.float >>= return . FloatLit
+float = FloatLit <$> L.signed (pure ()) L.float
 
 -- Parser for integers. Decimal, octal, hex and binary literals are supported.
 -- The numbers must be in range [-2^63 .. 2^63 - 1] or else the parsing fails.
 integer :: ParserIO PrimExpr
 integer = do
-    num <- (L.signed (pure ()) parseInt)
+    num <- L.signed (pure ()) parseInt
     checkOverflow num
     return . IntLit . fromInteger $ num
   where
     -- Parser for a integer literal.
     parseInt :: ParserIO Integer
-    parseInt = (P.try $ P.string "0o" >> L.octal)
-           <|> (P.try $ P.string "0x" >> L.hexadecimal)
-           <|> (P.try $ P.string "0b" >> L.binary)
+    parseInt = P.try (P.string "0o" >> L.octal)
+           <|> P.try (P.string "0x" >> L.hexadecimal)
+           <|> P.try (P.string "0b" >> L.binary)
            <|> L.decimal
     -- Function that checks whether the literal is within the correct range.
     checkOverflow :: Integer -> ParserIO ()
@@ -60,7 +60,7 @@ string = lexeme $ P.char '"' >> (T.pack <$> P.manyTill stringChar (P.char '"'))
 
 -- Parser for the '\{' character
 escapedBracket :: ParserIO Char
-escapedBracket = P.hidden $ (P.try $ P.string "\\{") $> '{'
+escapedBracket = P.hidden $ P.try (P.string "\\{") $> '{'
 
 -- Parser for characters that can appear inside normal (unformatted) strings.
 -- Bare '{' is forbidden and has to be escaped with '\'.
@@ -73,15 +73,13 @@ stringChar = (escapedFormat <|> L.charLiteral) <?> "character"
 
 -- Parser for character literals.
 character :: ParserIO PrimExpr
-character = (P.char '\'' *> L.charLiteral <* P.char '\'') >>= return . CharLit
+character = CharLit <$> (P.char '\'' *> L.charLiteral <* P.char '\'')
 
 -- Parser for boolean literals ('True' or 'False')
 boolean :: ParserIO PrimExpr
-boolean = (keyword "True" $> True) 
-      <|> (keyword "False" $> False) 
-      >>= return . BoolLit
+boolean = BoolLit <$> (keyword "True" $> True <|> keyword "False" $> False) 
 
 -- Parser for units. Parens may be separated by whitespace.
 unit :: ParserIO PrimExpr
-unit = symbol "(" *> pure UnitLit <* symbol ")"
+unit = symbol "(" >> UnitLit <$ symbol ")"
 

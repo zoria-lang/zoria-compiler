@@ -82,9 +82,9 @@ findModulePath current prefix name = do
     -- Join the prefix and module name into a single FilePath.
     foldPath :: [ModName] -> ModName -> FilePath
     foldPath prefix (ModName name) = 
-        foldl joinPath "" prefix </> (T.unpack name) <.> fileExtension
+        foldl joinPath "" prefix </> T.unpack name <.> fileExtension
       where
-        joinPath path (ModName dir) = path </> (T.unpack dir)
+        joinPath path (ModName dir) = path </> T.unpack dir
     -- Checks whether the first part of the module name fits some
     -- module path found in the command line arguments.
     matching :: ModulePath -> Bool
@@ -114,13 +114,13 @@ importOperators importedModule = do
         path        = modulePath . importMod $ importedModule
         identifiers = importIds importedModule
         pos         = importLoc importedModule
-    visible  <- (concat . Map.lookup path . stateExportedOps) <$> getState
+    visible  <- concat . Map.lookup path . stateExportedOps <$> getState
     addLocalOperators pos $ processImports identifiers visible hasAlias
 
 -- Given the path and list of imports figure out what operators need to
 -- be imported into the current operator table. If the import has an alias
 -- then the operators have to be explicitly imported to be included.
-processImports :: (Maybe [Located ImportedValue]) 
+processImports :: Maybe [Located ImportedValue] 
                 -> [(CustomOperator, Priority, Fixity)]
                 -> Bool
                 -> [(CustomOperator, Priority, Fixity)]
@@ -136,7 +136,7 @@ processImports (Just imports) visible _ =
 addLocalOperators :: Position 
                     ->[(CustomOperator, Priority, Fixity)] 
                     -> ParserIO ()
-addLocalOperators pos = mapM_ (flip defineOperator pos)
+addLocalOperators pos = mapM_ (`defineOperator` pos)
 
 -- Function for detection of invalid module names. Module names should 
 -- match the file names.

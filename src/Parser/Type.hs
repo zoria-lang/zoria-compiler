@@ -106,7 +106,7 @@ primType = keyword "Int" $> IntT
        <|> keyword "Float" $> FloatT
        <|> keyword "String" $> StringT
        <|> keyword "Bool" $> BoolT
-       <|> symbol "(" *> pure UnitT <* symbol ")"
+       <|> (symbol "(" $> UnitT) <* symbol ")"
        <|> P.try (keyword "Char") $> CharT
        <|> keyword "CPtr" $> CPtrT
 

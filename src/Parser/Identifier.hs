@@ -16,7 +16,7 @@ import qualified Data.Map.Strict as Map
 -- Parser for uppercase identifiers (e.g. Nothing, Maybe)
 uppercaseName :: ParserIO T.Text
 uppercaseName = lexeme $ do
-    name <- T.pack <$> (pure (:) <*> P.upperChar <*> P.many nameChar)
+    name <- T.pack <$> ((:) <$> P.upperChar <*> P.many nameChar)
     when (name `elem` upperReserved) $
         fail ("unexpected keyword " ++ show name)
     return name
@@ -24,7 +24,7 @@ uppercaseName = lexeme $ do
 -- Parser for lowercase identifiers (e.g. map)
 lowercaseName :: ParserIO T.Text 
 lowercaseName = lexeme $ do
-    name <- T.pack <$> (pure (:) <*> P.lowerChar <*> P.many nameChar)
+    name <- T.pack <$> ((:) <$> P.lowerChar <*> P.many nameChar)
     when (name `elem` reserved) $
         fail ("unexpected keyword " ++ show name)
     return name
@@ -64,15 +64,13 @@ constructorName = ConstructorName <$>
 -- Parser for identifiers that can be appear in the prefix position 
 -- (normal operators in brackets or variable names)
 prefixIdentifier :: ParserIO T.Text
-prefixIdentifier = lowercaseName 
-               <|> (surroundedBy "(" operator ")")
+prefixIdentifier = lowercaseName <|> surroundedBy "(" operator ")"
 
 -- Parser for qualified module names (e.g. Data\Map)
 qualifiedModuleName :: ParserIO ModuleId
 qualifiedModuleName = do
-    prefix <- P.many $ P.try $ (uppercaseName) <* sep
-    name   <- uppercaseName
-    return $ ModuleId (ModName <$> prefix) (ModName name) 
+    prefix <- P.many $ P.try (uppercaseName <* sep)
+    ModuleId (ModName <$> prefix) . ModName <$> uppercaseName
   where
     sep = P.char '\\' <?> "scope operator \"\\\""
 
@@ -94,7 +92,7 @@ unwrapOperator (PrefixVarOperator op) = op
 -- Parser for operators that don't start with ':'.
 operator :: ParserIO T.Text
 operator = lexeme $ do
-    op <- T.pack <$> (pure (:) <*> operatorChar <*> P.many operatorCharOrColon)
+    op <- T.pack <$> ((:) <$> operatorChar <*> P.many operatorCharOrColon)
     when (op `elem` reservedOperators) $
         fail ("unexpected reserved operator " ++ show op)
     return op
@@ -120,10 +118,11 @@ reservedOperators = [":", "=>", "->", "@", "=", ":="]
 -- It takes the position of the operator declaration for better error handling.
 defineOperator :: (CustomOperator, Priority, Fixity) -> Position -> ParserIO ()
 defineOperator (op, priority, fixity) pos = do
-    state @ ParserState { stateCurrentOps = visible } <- getState
-    let previousOps   = concat $ Map.lookup (priority, fixity) visible
+    state <- getState
+    let visible       = stateCurrentOps state
+        previousOps   = concat $ Map.lookup (priority, fixity) visible
         updatedTable  = Map.insert (priority, fixity) (op : previousOps) visible
-        updatedLocals = op : (stateLocalOps state)
+        updatedLocals = op : stateLocalOps state
     assertUndefined op
     putState $  state { stateCurrentOps = updatedTable 
                       , stateLocalOps   = updatedLocals
@@ -180,7 +179,7 @@ isNormalOp = not . isConstructorOp
 -- These operators can be used as constructor names only.
 constructorOperator :: ParserIO T.Text
 constructorOperator = lexeme $ do
-    op <- T.pack <$> (pure (:) <*> P.char ':' <*> P.some operatorCharOrColon)
+    op <- T.pack <$> ((:) <$> P.char ':' <*> P.some operatorCharOrColon)
     when (op `elem` reservedOperators) $
         fail ("unexpected reserved operator " ++ show op)
     return op
@@ -207,7 +206,7 @@ kindOfOperator kind priority fixity = do
         undefinedOperator :: ParserIO T.Text
         undefinedOperator = withPos $ \pos -> do
             ops <- stateLocalOps <$> getState
-            op <- P.try (cond (\op -> not (op `elem` ops)) customOperator)
+            op <- P.try (cond (`notElem` ops) customOperator)
             defineDefaultOperator op pos
             return . unwrapOperator $ op
         defineDefaultOperator :: CustomOperator -> Position -> ParserIO ()
@@ -229,8 +228,9 @@ customOperator :: ParserIO CustomOperator
 customOperator = ConstrOperator <$> constructorOperator
             <|> VarOperator <$> operator
             <|> PrefixConstrOperator <$> 
-                (P.try $ surroundedBy "`" uppercaseName "`")
-            <|> PrefixVarOperator <$> surroundedBy "`" lowercaseName "`"
+                    P.try (surroundedBy "`" uppercaseName "`")
+            <|> PrefixVarOperator <$> 
+                    surroundedBy "`" lowercaseName "`"
 
 -- Checks if something is an operator.
 -- It must either have an operator character at the beginning or be

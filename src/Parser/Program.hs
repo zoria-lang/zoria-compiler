@@ -34,7 +34,7 @@ module' path = do
         rawImports <- P.many $ located (import' <?> "module import")        
         imports  <- forM rawImports $ importFile module'
         importOperatorsFromImports imports
-        definitions <- catMaybes <$> (P.many $ topLevelDef)
+        definitions <- catMaybes <$> P.many topLevelDef
         skipWhitespace >> P.eof
         finalizeModule exports
         return $ Module (ModuleId [] name) path imports exports definitions

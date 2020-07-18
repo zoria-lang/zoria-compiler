@@ -95,7 +95,7 @@ patternMatching = withPos $ \pos -> do
 matchCase :: ParserIO (MatchCase ())
 matchCase = do
     P.try $ keyword "case"
-    p <- pattern <?> "pattern"
+    p <- pattern' <?> "pattern"
     keyword "=>"
     expr <- expression <?> "expression"
     return $ MatchCase p expr
@@ -104,7 +104,7 @@ matchCase = do
 lambdaExpr :: ParserIO (Expr ())
 lambdaExpr = withPos $ \pos -> do
     P.try $ (keyword "fn" <|> keyword "λ")
-    args <- P.some pattern <?> "argument patterns"
+    args <- P.some pattern' <?> "argument patterns"
     symbol "=>"
     body <- expression <?> "body expression"
     return $ desugar args body pos
@@ -235,47 +235,7 @@ atomicExpr = withPos $ \pos ->
     <|> P.try qualifiedName
     <|> P.try varExpr
     <|> P.try constructorExpr
-    <|> P.try tupleExpr
-    <|> P.between (symbol "(") (symbol ")") (partialOpLeft <|> partialOpRight)
-
--- Parser for partial operator application (left) (e.g. (+ 10))
-partialOpLeft :: ParserIO (Expr ())
-partialOpLeft = withPos $ \pos -> do
-    op   <- customOperator
-    expr <- expression
-    return $ Lambda (pattern pos) (makeApp op expr pos) Nothing pos ()
-  where
-    var = "_lhs"
-    constructor op = flip (Constructor (ConstructorName (unwrapOperator op))) ()
-    variable op = flip (Var (Identifier (unwrapOperator op))) ()
-    identifier  = flip (Var (Identifier var)) ()
-    pattern = flip (VarPattern $ Identifier "_lhs") ()
-    makeApp :: CustomOperator -> Expr () -> Position -> Expr ()
-    makeApp op expr pos
-        | isConstructorOp op =
-            App (App (constructor op pos) (identifier pos) ()) expr ()
-        | otherwise =
-            App (App (variable op pos) (identifier pos) ()) expr ()
-
--- Parser for partial operator application (right) (e.g. (10 +))
-partialOpRight :: ParserIO (Expr ())
-partialOpRight = withPos $ \pos -> do
-    expr <- expression
-    op <- customOperator
-    return $ Lambda (pattern pos) (makeApp op expr pos) Nothing pos ()
-  where
-    var = "_rhs"
-    constructor op = flip (Constructor (ConstructorName (unwrapOperator op))) ()
-    variable op = flip (Var (Identifier (unwrapOperator op))) ()
-    identifier  = flip (Var (Identifier var)) ()
-    pattern = flip (VarPattern $ Identifier "_rhs") ()
-    makeApp :: CustomOperator -> Expr () -> Position -> Expr ()
-    makeApp op expr pos
-        | isConstructorOp op =
-            App (App (constructor op pos) expr ()) (identifier pos) ()
-        | otherwise =
-            App (App (variable op pos) expr ()) (identifier pos) ()
-
+    <|> tupleExpr
 
 -- Returns a readable error in case of an undefined operator.
 operatorFail :: ParserIO a

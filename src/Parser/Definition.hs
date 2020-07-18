@@ -58,20 +58,18 @@ typeDef = withPos $ \pos -> do
             recordMember = do
                 memberName <- Identifier <$> prefixIdentifier
                 symbol ":"
-                -- TODO: maybe we shouldn't allow type signatures with constraints
-                memberType <- type'
-                return $ RecordField memberName memberType
+                RecordField memberName <$> type'
         -- Parser for normal constructor definitions (e.g. Just a)
         normalConstructor :: ConstructorName -> Position -> ParserIO TypeCase
         normalConstructor name pos = do
-            params <- P.many $ (atomicType <?> "constructor parameter")
+            params <- P.many (atomicType <?> "constructor parameter")
             return $ TypeCase name params pos
     -- Add all type constructors to the parser state so that later they can
     -- be implicitly exported.
     registerConstructors :: TypeName -> [TypeCase] -> ParserIO ()
     registerConstructors t cases = do
         stateOps <- stateCurrentOps <$> getState
-        let constructors = filter (isOp $ foldr (++) [] stateOps) cases'
+        let constructors = filter (isOp $ concat stateOps) cases'
         mapM_ (registerConstructor t) constructors
       where
         cases' = map caseConstructorName cases
@@ -84,7 +82,7 @@ typeDef = withPos $ \pos -> do
         let typeOpsMap = stateLocalTypeOps state
             prevConstructors = Map.lookup t typeOpsMap
             prevConstructorsList = concat $ maybeToList prevConstructors
-            newList = (ConstrOperator name) : prevConstructorsList
+            newList = ConstrOperator name : prevConstructorsList
         putState $ state { stateLocalTypeOps = Map.insert t newList typeOpsMap }
 
 classDef :: ParserIO Class
@@ -104,7 +102,7 @@ typeAliasDef :: ParserIO TAlias
 typeAliasDef = withPos $ \pos -> do
     keyword "alias"
     tName <- (TypeName <$> typeName) <?> "type name"
-    params <- (P.many (TypeVar <$> typeVariable)) <?> "type parameters"
+    params <- P.many (TypeVar <$> typeVariable) <?> "type parameters"
     symbol ":"
     kindSig <- P.optional kindSignature
     symbol "="

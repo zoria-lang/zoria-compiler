@@ -57,7 +57,7 @@ symbol = L.symbol skipWhitespace
 -- parser matches the input (and then consumes it), or False otherwise
 -- (then the output remains unconsumed)
 check :: ParserIO a -> ParserIO Bool
-check p = P.hidden $ P.optional (P.try $ void p) >>= return . isJust
+check p = P.hidden (isJust <$> P.optional (P.try $ void p))
 
 -- Parser which fails if the result of given parser does not match the 
 -- predicate.
@@ -108,7 +108,7 @@ skipWhitespace = L.space (void P.spaceChar) lineComment blockComment
 
 -- Get the path of the currently parsed file.
 getCurrentPath :: ParserIO FilePath
-getCurrentPath = getState >>= return . snd . head . stateModuleStack
+getCurrentPath = snd . head . stateModuleStack <$> getState
 
 -- Perform some parsing computation inside a stack frame. On the stack we store
 -- module names so that parser knows which module is parsed at the moment

@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Parser.Pattern (pattern, namedPattern) where
+module Parser.Pattern (pattern', namedPattern) where
 
 import Parser.ParserIO
 import Parser.Identifier
@@ -15,26 +15,24 @@ import qualified Text.Megaparsec as P
 
 -- Parser for patterns which can appear either in 'match ... with' 
 -- or let definitions
-pattern :: ParserIO (Pattern ())
-pattern = infixConstructorPattern 10 NoneFix
+pattern' :: ParserIO (Pattern ())
+pattern' = infixConstructorPattern 10 NoneFix
 
 -- Infix application of a constructor (e.g. a `Foo` b, x::xs)
 infixConstructorPattern :: Priority -> Fixity -> ParserIO (Pattern ())
 infixConstructorPattern 0 _ = prefixConstructorPattern
 infixConstructorPattern priority NoneFix = withPos $ \pos -> do
     lhs <- infixConstructorPattern priority RightFix
-    rhs <- P.optional $ pure (,) 
-        <*> (P.try $ constructorOperator' priority NoneFix)
-        <*> infixConstructorPattern priority RightFix
+    rhs <- P.optional $ ((,) <$> P.try (constructorOperator' priority NoneFix))
+                             <*> infixConstructorPattern priority RightFix
     return $ case rhs of
         Just (op, rhs) -> 
             ConstructorPattern (ConstructorName op) [lhs, rhs] pos ()
         Nothing -> lhs
 infixConstructorPattern priority RightFix = withPos $ \pos -> do
     lhs <- infixConstructorPattern priority LeftFix
-    rhs <- P.optional $ pure (,)
-        <*> (P.try $ constructorOperator' priority RightFix)
-        <*> infixConstructorPattern priority RightFix
+    rhs <- P.optional $ ((,) <$> P.try (constructorOperator' priority RightFix))
+                             <*> infixConstructorPattern priority RightFix
     return $ case rhs of
         Just (op, rhs) -> 
             ConstructorPattern (ConstructorName op) [lhs, rhs] pos ()
@@ -79,7 +77,7 @@ namedPattern = P.try namedPattern' <|> atomicPattern
 -- :: operator and [] constructor.
 listLiteralPattern :: ParserIO (Pattern ())
 listLiteralPattern = withPos $ \pos -> do
-    (Located pos ps) <- located $ separatedList "[" "]" pattern ","
+    (Located pos ps) <- located $ separatedList "[" "]" pattern' ","
     return $ foldPatterns ps pos
   where
     foldPatterns :: [Pattern ()] -> Position -> Pattern ()
@@ -95,14 +93,14 @@ atomicPattern = lexeme $
     wildcardPattern
     <|> P.try literalPattern
     <|> P.try variablePattern
-    <|> P.try (surroundedBy "(" pattern ")")
+    <|> P.try (surroundedBy "(" pattern' ")")
     <|> listLiteralPattern
     <|> tuplePattern
 
 -- Tuple of patterns (e.g. (1,2), ())
 tuplePattern :: ParserIO (Pattern ())
 tuplePattern = withPos $ \pos -> do
-    subpatterns <- separatedList "(" ")" pattern ","
+    subpatterns <- separatedList "(" ")" pattern' ","
     guard (length subpatterns > 1)
     return $ TuplePattern subpatterns pos ()
 

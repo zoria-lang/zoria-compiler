@@ -14,7 +14,7 @@ indent i = T.concat (replicate i "\t")
 
 instance PrettyPrint (Expr a) where
     prettyPrint i (Primitive p _ _) = 
-        indent i <> (prettyPrint i p)
+        indent i <> prettyPrint i p
     prettyPrint i (Var (Identifier var) _ _) = 
         indent i <> var
     prettyPrint i (Constructor (ConstructorName var) _ _) = 
@@ -66,9 +66,9 @@ instance PrettyPrint (Expr a) where
         indent i <> "\"" <> T.concat (map (prettyPrint 0) fmts) <> "\""
 
 instance PrettyPrint (MatchCase a) where
-    prettyPrint i (MatchCase pattern expr) =
+    prettyPrint i (MatchCase pat expr) =
         indent i 
-            <> "case " <> prettyPrint 0 pattern 
+            <> "case " <> prettyPrint 0 pat
             <> " => "  <> prettyPrint 0 expr
 
 instance PrettyPrint (FormatExpr a) where
@@ -124,8 +124,8 @@ instance PrettyPrint PrimType where
     prettyPrint i CPtrT   = indent i <> "CPtr"
 
 instance PrettyPrint (Pattern a) where
-    prettyPrint i (NamedPattern (Identifier name) pattern _ _) =
-        indent i <> name <> "@" <> prettyPrint 0 pattern
+    prettyPrint i (NamedPattern (Identifier name) pat _ _) =
+        indent i <> name <> "@" <> prettyPrint 0 pat
     prettyPrint i (VarPattern (Identifier var) _ _) = indent i <> var
     prettyPrint i (WildcardPattern _ _) = indent i <> "_"
     prettyPrint i (ConstructorPattern (ConstructorName constr) args _ _) =
@@ -152,9 +152,9 @@ instance PrettyPrint (LetDef a) where
         <> indent i <> "\n}"
 
 instance PrettyPrint (Definition a) where
-    prettyPrint i (Definition pattern sig expr _) =
+    prettyPrint i (Definition pat sig expr _) =
         indent i 
-            <> prettyPrint 0 pattern 
+            <> prettyPrint 0 pat
             <> " : " 
             <> maybePrint sig 
             <> " = "

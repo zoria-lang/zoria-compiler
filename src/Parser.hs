@@ -24,7 +24,7 @@ parseProgram = do
     -- Adds the main file directory to the list of external modules specified
     -- in command line arguments. The module root name is "\".
     addRootModule :: Options -> Options
-    addRootModule opts@(Options { optModules = mods, optInputs = inputs }) = 
+    addRootModule opts@Options {optModules = mods, optInputs = inputs} = 
         opts { optModules = rootModule : mods }
       where
         rootModule = ModulePath "\\" (takeDirectory $ head inputs)
