@@ -6,6 +6,7 @@ import           ValueSyntax
 import qualified Data.Map                      as M
 import qualified Data.Text                     as T
 
+-- TODO: Think about Environment structure. How modules should be stored etc.
 
 emptyEnvironment :: Environment
 emptyEnvironment = Environment M.empty

@@ -31,7 +31,6 @@ evalPrimitive (Primitive primExpr _ _) env =
     return $ PrimitiveVal $ evalPrimExpr primExpr
 evalPrimitive expr _ = exprTypeError expr "Primitive"
 
-
 evalVar :: Show a => Expr a -> Environment -> IO Value
 evalVar (Var identifier _ _) env = return $ lookupIdentifier identifier env
 
@@ -101,9 +100,9 @@ exprUnit = fmap (const ())
 evalLambda :: Show a => Expr a -> Environment -> IO Value
 evalLambda lambdaExpr@Lambda{} env = return
     $ makeProcedure (exprUnit lambdaExpr) env  where
-    makeProcedure :: Expr () -> Environment -> Value
-    makeProcedure (Lambda pattern expr name _ _) env =
-        Procedure pattern expr env
+        makeProcedure :: Expr () -> Environment -> Value
+        makeProcedure (Lambda pattern expr name _ _) env =
+            Procedure pattern expr env
 evalLambda expr _ = exprTypeError expr "Lambda"
 
 evalExprList :: Show a => [Expr a] -> Environment -> IO [Value]
@@ -160,7 +159,7 @@ apply :: Value -> Value -> IO Value
 apply (Procedure pattern body procEnv) argument = 
     case matchPattern pattern argument of
         Just applyEnv -> eval body (unionEnvironments procEnv applyEnv)
--- apply to constructor?
+-- TODO: apply to something else?
 
 evalApp :: Show a => Expr a -> Environment -> IO Value
 evalApp (App operator argument _) env = do
@@ -181,7 +180,7 @@ evalMatch (Match expr matchCases _ _) env =  do
 
 evalExternal :: Show a => Expr a -> Environment -> IO Value
 evalExternal (External filePath name _ _) env = undefined
--- TODO: Parse external file and find identifier value??
+-- TODO: Parse external file and find identifier value?
 evalExternal expr _ = exprTypeError expr "External"
 
 evalInternal :: Show a => Expr a -> Environment -> IO Value
@@ -190,6 +189,10 @@ evalInternal (Internal identifier _ _) env =
 
 evalAnnotatedExpr :: Show a => Expr a -> Environment -> IO Value
 evalAnnotatedExpr (AnnotatedExpr expr _ _ _) env = eval expr env
+
+evalFormatString :: Show a => Expr a -> Environment -> IO Value
+evalFormatString (FormatString formatExpr _ _) env = undefined
+-- TODO: What should string look like? Decide and write eval
 
 eval :: Show a => Expr a -> Environment -> IO Value
 eval expr@Primitive{}            env = evalPrimitive expr env
@@ -208,72 +211,4 @@ eval expr@Match{}                env = evalMatch expr env
 eval expr@External{}             env = evalExternal expr env
 eval expr@Internal{}             env = evalInternal expr env
 eval expr@AnnotatedExpr{}        env = evalAnnotatedExpr expr env
-eval expr@FormatString{}         env = undefined -- !!!
-
--- REMOVE LATER
-testPosition :: Utility.Position
-testPosition = Position 0 ""
-
-e :: Expr Integer
-e = Var (Identifier (T.pack "x")) testPosition 0
-
-e2 = Block [] testPosition 0
-
-env :: Environment
-env = extendEnvironment (T.pack "x") (PrimitiveVal (IntVal 3)) emptyEnvironment
-
-e3 = Lambda
-    (WildcardPattern testPosition ())
-    (And (Primitive (BoolLit True) testPosition ())
-         (Primitive (BoolLit True) testPosition ())
-         testPosition
-         ()
-    )
-    Nothing
-    testPosition
-    ()
-
-pattern :: Pattern ()
-pattern = ConstPattern (IntLit 4) testPosition ()
-
--- val :: Value
--- val = PrimitiveVal (IntVal 5)
-
-t :: Expr ()
-t = Tuple [Tuple [Primitive (IntLit 1) testPosition (),
-                Primitive (IntLit 2) testPosition ()
-                ] testPosition (),
-                Primitive (IntLit 3) testPosition ()
-                ] testPosition ()--,
-        -- Primitive (BoolLit False) testPosition ()
-        -- Primitive (FloatLit 4.5) testPosition ()] testPosition ()
-
-
-makeIdentifier :: String -> Identifier
-makeIdentifier str = (Identifier (T.pack str))
-
-identifiers = map makeIdentifier ["x","y"] --,"z"]
-
-varPatterns = map (\id -> VarPattern id testPosition ()) identifiers
-
-tp = TuplePattern varPatterns testPosition ()
-
-tp2 = TuplePattern [tp, VarPattern (makeIdentifier "z") testPosition ()] testPosition ()
-
-namedPatternExample = NamedPattern (makeIdentifier "tuple") tp2 testPosition ()
-
-vals = eval t emptyEnvironment
-
-result = do
-    v <- vals 
-    return $ matchPattern tp2 v
-
-
-result2 = do
-    v <- vals 
-    return $ matchPattern namedPatternExample v
-
-
-cp = ConstPattern (IntLit 3) testPosition ()
-
-cpTest = matchPattern cp (PrimitiveVal (IntVal 3))
+eval expr@FormatString{}         env = evalFormatString expr env

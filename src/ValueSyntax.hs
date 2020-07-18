@@ -5,8 +5,12 @@ import qualified Data.Text                     as T
 
 import Syntax
 
+-- TODO: Think about Environment structure. How modules should be stored etc.
+
 newtype Environment = Environment (M.Map T.Text Value)
     deriving Show
+
+-- TODO: What the Value type should look like?
 
 data PrimVal
     = IntVal Int
@@ -29,3 +33,4 @@ data Value
   | TupleVal [Value]
   | CustomType ConstructorName [Value]
   deriving Show
+-- TODO: Should constructor be stored as procedure, or as
