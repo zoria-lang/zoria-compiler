@@ -2,7 +2,8 @@
 module Helpers where
 
 import           Test.Framework
-import           Control.Arrow                  ( left )
+
+data TestValue = Expected | Received deriving (Show, Eq)
 
 assertEqualLeft :: (Eq a, Show a) => Either a b -> Either a c -> IO ()
-assertEqualLeft a b = assertEqual ("expected" <$ a) ("actual" <$ b)
+assertEqualLeft a b = assertEqual (Expected <$ a) (Received <$ b)

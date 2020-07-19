@@ -10,11 +10,6 @@ import           Helpers
 import           ParserTests.Helpers
 import           Parser                         ( runParser )
 import           Parser.Module
-import           Data.List                      ( intercalate )
-
-errorMsg :: [String] -> Either String a
-errorMsg = Left . intercalate "\n"
-
 
 test_emptyFileFails = assertEqualLeft expected result
   where
@@ -25,4 +20,12 @@ test_emptyFileFails = assertEqualLeft expected result
         "unexpected end of input\nexpecting keyword 'module'"
         (1, 1)
 
-test_noModuleName = assertBool False
+test_noModuleNameFail = assertEqualLeft expected result
+  where
+    input    = "module "
+    result   = runParser module' "file" input
+    expected = makePrettyError
+        "file"
+        input
+        "unexpected end of input\nexpecting module name"
+        (1, 8)

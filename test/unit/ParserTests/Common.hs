@@ -9,9 +9,7 @@ import           Test.Framework
 import           Parser                         ( runParser )
 import           Parser.Common
 import           Data.Text                      ( Text )
-
-runUntilEof :: Parser a -> Text -> Either String a
-runUntilEof p = runParser (untilEof p) ""
+import           ParserTests.Helpers
 
 runWhitespace :: Text -> Either String ()
 runWhitespace = runUntilEof whitespace
@@ -43,7 +41,7 @@ test_emptyTextSymbol = assertLeft $ runSymbol "a" ""
 test_symbolConsumesOnlyTrailingWhitespace = assertEqual (Right "b") result
     where result = runParser (symbol "a" >> symbol "b") "" "a b"
 
-test_keywordRejectsSuffix = assertLeft $ runParser (keyword "a")  "" "ab"
+test_keywordRejectsSuffix = assertLeft $ runParser (keyword "a") "" "ab"
 
 test_keywordHasNoNumericSuffix = assertLeft $ runParser (keyword "a") "" "a6"
 

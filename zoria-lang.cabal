@@ -23,6 +23,7 @@ library
                         Parser.RawAst,
                         Parser.Common,
                         Parser.Module,
+                        Parser.Identifier,
                         Parser.Expression
     ghc-options:        -Wunused-imports
     build-depends:      base >= 4.7 && < 5,
@@ -48,6 +49,7 @@ test-suite unit-tests
                         ParserTests.Helpers
                         ParserTests.Module
                         ParserTests.Common
+                        ParserTests.Identifier
     ghc-options:        -Wunused-imports
     build-depends:      zoria-lang,
                         megaparsec >= 8.0.0,

@@ -23,8 +23,11 @@ keyword kw = kwKeyword <?> ("keyword '" ++ T.unpack kw ++ "'")
   where
     kwKeyword = lexeme (symbol kw <* P.notFollowedBy P.alphaNumChar) $> ()
 
-untilEof :: Parser a -> Parser a
-untilEof = (<* P.eof)
+list :: Parser start -> Parser a -> Parser end -> Parser sep -> Parser [a]
+list start elem end sep = P.between start end (P.sepBy elem sep)
+
+list' :: T.Text -> Parser a -> T.Text -> T.Text -> Parser [a]
+list' start elem end sep = list (symbol start) elem (symbol end) (symbol sep)
 
 whitespace :: Parser ()
 whitespace = L.space P.space1 lineComment blockComment
