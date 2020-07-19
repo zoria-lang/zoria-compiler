@@ -1,5 +1,6 @@
 module Parser
     ( runParser
+    , Parser.Common.Parser
     )
 where
 

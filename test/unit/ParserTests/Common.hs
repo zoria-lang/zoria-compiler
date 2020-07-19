@@ -17,7 +17,7 @@ runWhitespace :: Text -> Either String ()
 runWhitespace = runUntilEof whitespace
 
 runSymbol :: Text -> Text -> Either String Text
-runSymbol  = runUntilEof . symbol
+runSymbol = runUntilEof . symbol
 
 test_emptyTextWhitespace = assertRight (runWhitespace "")
 
@@ -41,5 +41,11 @@ test_singleSymbol = assertEqual (Right "symbol") (runSymbol "symbol" "symbol")
 test_emptyTextSymbol = assertLeft $ runSymbol "a" ""
 
 test_symbolConsumesOnlyTrailingWhitespace = assertEqual (Right "b") result
-  where
-    result = runParser (symbol "a" >> symbol "b") "" "a b"
+    where result = runParser (symbol "a" >> symbol "b") "" "a b"
+
+test_keywordRejectsSuffix = assertLeft $ runParser (keyword "a")  "" "ab"
+
+test_keywordHasNoNumericSuffix = assertLeft $ runParser (keyword "a") "" "a6"
+
+test_requireWhitespaceBetweenKeywords =
+    assertLeft $ runParser (keyword "a" >> keyword "b") "" "ab"

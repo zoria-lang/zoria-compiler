@@ -3,8 +3,17 @@ module Parser.Module where
 
 
 import           Parser.Common
-import qualified Parser.RawAst                 as Ast
-import qualified Data.Text                     as T
+import qualified Syntax                        as Ast
+import           Parser.RawAst
 
-module' :: Parser Ast.RawModule
-module' = undefined
+mockModule :: RawModule
+mockModule = RawModule { modId      = Ast.ModuleId [] (Ast.ModName "Foo")
+                       , modExports = Everything
+                       , modImports = []
+                       , modDefs    = []
+                       }
+
+module' :: Parser RawModule
+module' = do 
+    keyword "module"
+    return mockModule

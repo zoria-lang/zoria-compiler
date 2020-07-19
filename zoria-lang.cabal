@@ -45,10 +45,12 @@ test-suite unit-tests
     hs-source-dirs:     test/unit
     other-modules:      GetOptTests,
                         Helpers,
+                        ParserTests.Helpers
                         ParserTests.Module
                         ParserTests.Common
     ghc-options:        -Wunused-imports
     build-depends:      zoria-lang,
+                        megaparsec >= 8.0.0,
                         text >= 1.2.4.0,
                         base >= 4.7 && < 5,
                         HTF >= 0.14.0.3
