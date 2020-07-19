@@ -18,7 +18,9 @@ library
     exposed-modules:    GetOpt,
                         GetOpt.Internal,
                         Syntax,
-                        Utility
+                        Utility,
+                        Parser,
+                        Parser.RawAst
     ghc-options:        -Wunused-imports
     build-depends:      base >= 4.7 && < 5,
                         text >= 1.2.4.0,
@@ -28,6 +30,7 @@ library
 executable zoriac
     hs-source-dirs:     app
     main-is:            Main.hs
+    ghc-options:        -Wunused-imports
     build-depends:      zoria-lang,
                         base >= 4.7 && < 5,
                         HTF >= 0.14.0.3
@@ -38,6 +41,7 @@ test-suite unit-tests
     main-is:            Main.hs
     hs-source-dirs:     test/unit
     other-modules:      GetOptTests
+    ghc-options:        -Wunused-imports
     build-depends:      zoria-lang,
                         base >= 4.7 && < 5,
                         HTF >= 0.14.0.3
