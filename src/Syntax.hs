@@ -17,7 +17,7 @@ data Located a = Located
     { location  :: Position
     , unlocated :: a
     }
-  deriving Show
+  deriving (Show, Eq)
 
 newtype Program a = Program 
     { programRoot :: Module a

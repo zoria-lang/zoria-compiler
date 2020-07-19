@@ -18,12 +18,17 @@ mockModule = RawModule { modId      = Ast.ModuleId [] (Ast.ModName "Foo")
 
 module' :: Parser RawModule
 module' = do
-    keyword "module"
-    name <- moduleName
+    (name, _) <- moduleHeader
     return $ mockModule { modId = name }
+
+moduleHeader :: Parser (Ast.ModuleId, IdentifierList)
+moduleHeader = do
+    keyword "module"
+    name <- moduleName <?> "module name"
+    return (name, Everything)
 
 moduleName :: Parser Ast.ModuleId
 moduleName = do
-    names <- list1' "" name "" "/"
+    names <- list1' "" name "" "\\"
     return $ Ast.ModuleId (init names) (last names)
-    where name = (Ast.ModName <$> uppercaseIdentifier) <?> "module name"
+    where name = Ast.ModName <$> (uppercaseIdentifier <?> "module name") 

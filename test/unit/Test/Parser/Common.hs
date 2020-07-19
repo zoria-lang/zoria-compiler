@@ -41,13 +41,6 @@ test_emptyTextSymbol = assertLeft $ runSymbol "a" ""
 test_symbolConsumesOnlyTrailingWhitespace = assertEqual (Right "b") result
     where result = runParser (symbol "a" >> symbol "b") "" "a b"
 
-test_keywordRejectsSuffix = assertLeft $ runParser (keyword "a") "" "ab"
-
-test_keywordHasNoNumericSuffix = assertLeft $ runParser (keyword "a") "" "a6"
-
-test_requireWhitespaceBetweenKeywords =
-    assertLeft $ runParser (keyword "a" >> keyword "b") "" "ab"
-
 test_emptyList = assertEqual (Right []) result
   where
     listParser = list' "[" (symbol "A") "]" ","
