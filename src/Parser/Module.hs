@@ -7,6 +7,7 @@ import           Parser.RawAst
 import           Parser.Identifier
 import qualified Syntax                        as Ast
 import           Text.Megaparsec                ( (<?>) )
+import qualified Text.Megaparsec               as P
 
 mockModule :: RawModule
 mockModule = RawModule { modId      = Ast.ModuleId [] (Ast.ModName "Foo")
@@ -22,7 +23,7 @@ module' = do
     return $ mockModule { modId = name }
 
 moduleName :: Parser Ast.ModuleId
-moduleName = (Ast.ModuleId <$> nameQualifier <*> name) <?> "module name"
-  where
-    nameQualifier = list' "" name "" "/"
-    name          = Ast.ModName <$> uppercaseIdentifier
+moduleName = do
+    names <- list1' "" name "" "/"
+    return $ Ast.ModuleId (init names) (last names)
+    where name = (Ast.ModName <$> uppercaseIdentifier) <?> "module name"

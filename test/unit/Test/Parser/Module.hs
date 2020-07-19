@@ -8,8 +8,8 @@ where
 import           Test.Framework
 import           Test.Helpers
 import           Test.Parser.Helpers
-import           Parser                         ( runParser )
 import           Parser.Module
+import qualified Syntax                        as Ast
 
 test_emptyFileFails = assertEqualLeft expected result
   where
@@ -29,3 +29,14 @@ test_noModuleNameFail = assertEqualLeft expected result
         input
         "unexpected end of input\nexpecting module name"
         (1, 8)
+
+test_simpleModuleName = assertEqual expected result
+  where
+    result   = runParser moduleName "" "Foo"
+    expected = Right $ Ast.ModuleId [] $ Ast.ModName "Foo"
+
+test_qualifiedModuleName = assertEqual expected result
+  where
+    result   = runParser moduleName "" "Foo/Bar/FizzBuzz"
+    expected = Right $ Ast.ModuleId (Ast.ModName <$> ["Foo", "Bar"])
+                                    (Ast.ModName "FizzBuzz")

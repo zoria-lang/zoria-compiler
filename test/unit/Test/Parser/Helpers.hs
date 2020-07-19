@@ -1,6 +1,8 @@
 module Test.Parser.Helpers
     ( makePrettyError
     , runUntilEof
+    , runParser'
+    , runParser
     )
 where
 
@@ -15,6 +17,9 @@ untilEof = (<* P.eof)
 
 runUntilEof :: Parser a -> Text -> Either String a
 runUntilEof p = runParser (untilEof p) ""
+
+runParser' :: Parser a -> Text -> Either String a
+runParser' p = runParser p ""
 
 failAtPosition :: String -> (Int, Int) -> Parser a
 failAtPosition message (lines, columns) = do

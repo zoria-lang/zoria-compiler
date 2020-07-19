@@ -6,10 +6,10 @@ module Test.Parser.Common
 where
 
 import           Test.Framework
-import           Parser                         ( runParser )
 import           Parser.Common
 import           Data.Text                      ( Text )
 import           Test.Parser.Helpers
+import           Test.Helpers
 
 runWhitespace :: Text -> Either String ()
 runWhitespace = runUntilEof whitespace
@@ -47,3 +47,31 @@ test_keywordHasNoNumericSuffix = assertLeft $ runParser (keyword "a") "" "a6"
 
 test_requireWhitespaceBetweenKeywords =
     assertLeft $ runParser (keyword "a" >> keyword "b") "" "ab"
+
+test_emptyList = assertEqual (Right []) result
+  where
+    listParser = list' "[" (symbol "A") "]" ","
+    result     = runParser listParser "" "[]"
+
+test_listWithNoBeginningAndEnd = assertEqual expected result
+  where
+    expected   = Right ["A", "A", "A", "A", "A"]
+    listParser = list' "" (symbol "A") "" "/"
+    result     = runParser listParser "" "A/A /A/ A  /  A"
+
+test_emptyNonEmptyList = assertEqualLeft expected result
+  where
+    input = "[]"
+    expected =
+        makePrettyError "file" input "unexpected ']'\nexpecting 'A'" (1, 2)
+    listParser = list1' "[" (symbol "A") "," "]"
+    result     = runParser listParser "file" input
+
+test_emptyNonEmptyListWithoutStartAndEnd = assertEqualLeft expected result
+  where
+    expected = makePrettyError "file"
+                               ""
+                               "unexpected end of input\nexpecting 'A'"
+                               (1, 1)
+    listParser = list1 "" (symbol "A") "," ""
+    result     = runParser listParser "file" ""
