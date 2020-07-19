@@ -15,6 +15,7 @@ extra-source-files:  README.md
 
 executable zoriac
   hs-source-dirs:      src
+                       src/evaluator
   main-is:             Main.hs
   other-modules:       Syntax
                        GetOpt
