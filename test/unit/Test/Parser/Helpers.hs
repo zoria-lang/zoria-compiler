@@ -1,4 +1,4 @@
-module ParserTests.Helpers
+module Test.Parser.Helpers
     ( makePrettyError
     , runUntilEof
     )

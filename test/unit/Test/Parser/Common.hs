@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -F -pgmF htfpp #-}
 {-# LANGUAGE OverloadedStrings #-}
-module ParserTests.Common
+module Test.Parser.Common
     ( htf_thisModulesTests
     )
 where
@@ -9,7 +9,7 @@ import           Test.Framework
 import           Parser                         ( runParser )
 import           Parser.Common
 import           Data.Text                      ( Text )
-import           ParserTests.Helpers
+import           Test.Parser.Helpers
 
 runWhitespace :: Text -> Either String ()
 runWhitespace = runUntilEof whitespace

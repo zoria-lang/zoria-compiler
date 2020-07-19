@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -F -pgmF htfpp #-}
 {-# LANGUAGE OverloadedStrings #-}
-module GetOptTests
+module Test.GetOpt
     ( htf_thisModulesTests
     )
 where

@@ -1,13 +1,13 @@
 {-# OPTIONS_GHC -F -pgmF htfpp #-}
 {-# LANGUAGE OverloadedStrings #-}
-module ParserTests.Module
+module Test.Parser.Module
     ( htf_thisModulesTests
     )
 where
 
 import           Test.Framework
-import           Helpers
-import           ParserTests.Helpers
+import           Test.Helpers
+import           Test.Parser.Helpers
 import           Parser                         ( runParser )
 import           Parser.Module
 

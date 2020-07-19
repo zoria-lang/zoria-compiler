@@ -1,12 +1,12 @@
 {-# OPTIONS_GHC -F -pgmF htfpp #-}
 {-# LANGUAGE OverloadedStrings #-}
-module ParserTests.Identifier
+module Test.Parser.Identifier
     ( htf_thisModulesTests
     )
 where
 
 import           Test.Framework
-import           ParserTests.Helpers
+import           Test.Parser.Helpers
 import           Parser.Identifier
 
 test_singleLetterUppercaseName =

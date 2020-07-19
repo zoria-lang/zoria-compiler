@@ -3,10 +3,10 @@ module Main where
 
 import Test.Framework
 
-import {-@ HTF_TESTS @-} GetOptTests
-import {-@ HTF_TESTS @-} ParserTests.Module
-import {-@ HTF_TESTS @-} ParserTests.Common
-import {-@ HTF_TESTS @-} ParserTests.Identifier
+import {-@ HTF_TESTS @-} Test.GetOpt
+import {-@ HTF_TESTS @-} Test.Parser.Module
+import {-@ HTF_TESTS @-} Test.Parser.Common
+import {-@ HTF_TESTS @-} Test.Parser.Identifier
 
 main :: IO ()
 main = htfMain htf_importedTests

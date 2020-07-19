@@ -44,12 +44,12 @@ test-suite unit-tests
     type:               exitcode-stdio-1.0
     main-is:            Main.hs
     hs-source-dirs:     test/unit
-    other-modules:      GetOptTests,
-                        Helpers,
-                        ParserTests.Helpers
-                        ParserTests.Module
-                        ParserTests.Common
-                        ParserTests.Identifier
+    other-modules:      Test.GetOpt,
+                        Test.Helpers,
+                        Test.Parser.Helpers
+                        Test.Parser.Module
+                        Test.Parser.Common
+                        Test.Parser.Identifier
     ghc-options:        -Wunused-imports
     build-depends:      zoria-lang,
                         megaparsec >= 8.0.0,
