@@ -20,7 +20,10 @@ library
                         Syntax,
                         Utility,
                         Parser,
-                        Parser.RawAst
+                        Parser.RawAst,
+                        Parser.Common,
+                        Parser.Module,
+                        Parser.Expression
     ghc-options:        -Wunused-imports
     build-depends:      base >= 4.7 && < 5,
                         text >= 1.2.4.0,
@@ -40,9 +43,13 @@ test-suite unit-tests
     type:               exitcode-stdio-1.0
     main-is:            Main.hs
     hs-source-dirs:     test/unit
-    other-modules:      GetOptTests
+    other-modules:      GetOptTests,
+                        Helpers,
+                        ParserTests.Module
+                        ParserTests.Common
     ghc-options:        -Wunused-imports
     build-depends:      zoria-lang,
+                        text >= 1.2.4.0,
                         base >= 4.7 && < 5,
                         HTF >= 0.14.0.3
     default-language:   Haskell2010

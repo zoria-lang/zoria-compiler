@@ -15,8 +15,12 @@ import qualified Syntax                        as Ast
 type Program = [Module]
 
 data Module = Module
+    { modPath :: FilePath
+    , modData :: RawModule
+    }
+ 
+data RawModule = RawModule
     { modId      :: Ast.ModuleId
-    , modPath    :: FilePath
     , modExports :: IdentifierList
     , modImports :: [Ast.Located Import]
     , modDefs    :: [TopLevelDef]
