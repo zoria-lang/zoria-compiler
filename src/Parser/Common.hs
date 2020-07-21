@@ -5,10 +5,20 @@ import qualified Text.Megaparsec               as P
 import qualified Text.Megaparsec.Char          as P
 import qualified Text.Megaparsec.Char.Lexer    as L
 import qualified Data.Text                     as T
+import           Utility                        ( Position(..) )
 import           Data.Void                      ( Void )
 
 type Parser = P.Parsec Void T.Text
 type Errors = P.ParseErrorBundle T.Text Void
+
+
+withPos :: (Position -> Parser a) -> Parser a
+withPos f = do
+    state  <- P.getParserState
+    offset <- P.getOffset
+    let file = extractFilePath state
+    f $ Position offset file
+    where extractFilePath = P.sourceName . P.pstateSourcePos . P.statePosState
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme whitespace

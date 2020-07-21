@@ -6,10 +6,12 @@ module Test.Parser.Common
 where
 
 import           Test.Framework
+import           Utility                        ( Position(..) )
 import           Parser.Common
 import           Data.Text                      ( Text )
 import           Test.Parser.Helpers
 import           Test.Helpers
+import           Data.Functor                   ( ($>) )
 
 runWhitespace :: Text -> Either String ()
 runWhitespace = runUntilEof whitespace
@@ -68,3 +70,13 @@ test_emptyNonEmptyListWithoutStartAndEnd = assertEqualLeft expected result
                                (1, 1)
     listParser = list1 "" (symbol "A") "," ""
     result     = runParser listParser "file" ""
+
+test_simplePosTest = do
+    assertEqual expected1 (parse "A" $ posParser (symbol "A"))
+    assertEqual expected2 (parse "q   B" $ symbol "q" *> posParser (symbol "B"))
+  where
+    fileName = "FileName"
+    posParser parser = withPos $ \pos -> parser $> pos
+    parse input parser = runParser parser fileName input
+    expected1 = Right $ Position 0 fileName
+    expected2 = Right $ Position 4 fileName
