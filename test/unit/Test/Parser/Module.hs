@@ -18,75 +18,95 @@ simpleModuleName :: Text -> Ast.ModuleId
 simpleModuleName name = Ast.ModuleId [] (Ast.ModName name)
 
 
-test_emptyFileFails = assertEqualLeft expected result
+test_moduleHeaderTests = do
+    noModuleNameFail
+    commentBeforeModuleName
   where
-    result   = runParser module' "file" ""
-    expected = makePrettyError
-        "file"
-        ""
-        "unexpected end of input\nexpecting keyword 'module'"
-        (1, 1)
+    noModuleNameFail = assertEqualLeft expected result
+      where
+        input    = "module "
+        result   = runParser moduleHeader "file" input
+        expected = makePrettyError
+            "file"
+            input
+            "unexpected end of input\nexpecting module name"
+            (1, 8)
 
-test_noModuleNameFail = assertEqualLeft expected result
+    commentBeforeModuleName = assertEqual expected result
+      where
+        result   = runParser moduleHeader "" "module {# comment #} Main"
+        expected = Right (Ast.ModuleId [] (Ast.ModName "Main"), Everything)
+
+test_moduleNameTests = do
+    simpleModuleName
+    moduleNameErrorMessage
+    qualifiedModuleName
+    commentBetweenModuleQualifiers
   where
-    input    = "module "
-    result   = runParser moduleHeader "file" input
-    expected = makePrettyError
-        "file"
-        input
-        "unexpected end of input\nexpecting module name"
-        (1, 8)
+    simpleModuleName = assertEqual expected result
+      where
+        result   = runParser qualifiedModuleId "" "Foo"
+        expected = Right $ Ast.ModuleId [] $ Ast.ModName "Foo"
 
-test_simpleModuleName = assertEqual expected result
+    moduleNameErrorMessage = assertEqualLeft expected result
+      where
+        input    = "lowercase"
+        file     = "file"
+        result   = runParser moduleName file input
+        expected = makePrettyError file
+                                   input
+                                   "unexpected 'l'\nexpecting module name"
+                                   (1, 1)
+
+    qualifiedModuleName = assertEqual expected result
+      where
+        result   = runParser qualifiedModuleId "" "Foo\\Bar\\FizzBuzz"
+        expected = Right $ Ast.ModuleId (Ast.ModName <$> ["Foo", "Bar"])
+                                        (Ast.ModName "FizzBuzz")
+
+    commentBetweenModuleQualifiers = assertEqual expected result
+      where
+        result   = runParser qualifiedModuleId "" "Foo\\{# foo #}Bar{# bar #}"
+        expected = Right $ Ast.ModuleId [Ast.ModName "Foo"] (Ast.ModName "Bar")
+
+test_fullModuleTests = do
+    emptyFileFails
+    moduleSimpleImports
   where
-    result   = runParser qualifiedModuleId "" "Foo"
-    expected = Right $ Ast.ModuleId [] $ Ast.ModName "Foo"
+    emptyFileFails = assertEqualLeft expected result
+      where
+        result   = runParser module' "file" ""
+        expected = makePrettyError
+            "file"
+            ""
+            "unexpected end of input\nexpecting keyword 'module'"
+            (1, 1)
 
-test_moduleNameErrorMessage = assertEqualLeft expected result
-  where
-    input    = "lowercase"
-    file     = "file"
-    result   = runParser moduleName file input
-    expected = makePrettyError file
-                               input
-                               "unexpected 'l'\nexpecting module name"
-                               (1, 1)
-
-test_qualifiedModuleName = assertEqual expected result
-  where
-    result   = runParser qualifiedModuleId "" "Foo\\Bar\\FizzBuzz"
-    expected = Right $ Ast.ModuleId (Ast.ModName <$> ["Foo", "Bar"])
-                                    (Ast.ModName "FizzBuzz")
-
-test_commentBetweenModuleQualifiers = assertEqual expected result
-  where
-    result   = runParser qualifiedModuleId "" "Foo\\{# foo #}Bar{# bar #}"
-    expected = Right $ Ast.ModuleId [Ast.ModName "Foo"] (Ast.ModName "Bar")
-
-test_commentBeforeModuleName = assertEqual expected result
-  where
-    result   = runParser moduleHeader "" "module {# comment #} Main"
-    expected = Right (Ast.ModuleId [] (Ast.ModName "Main"), Everything)
-
-test_noImportList = assertEqual (Right Everything) result
-    where result = runParser importList "" ""
-
-test_emptyImportList = assertEqual (Right (Specified [])) result
-    where result = runParser importList "" "[]"
-
-test_moduleSimpleImports = assertEqual expected result
-  where
-    file     = "Main.zo"
-    input    = "module Main import FooBar"
-    result   = runParser module' file input
-    expected = Right mockModule { modId      = simpleModuleName "Main"
-                                , modExports = Everything
-                                , modImports = imports
-                                }
-    imports =
-        [ located (Import (simpleModuleName "FooBar") Nothing Everything)
+    moduleSimpleImports = assertEqual expected result
+      where
+        file     = "Main.zo"
+        input    = "module Main import FooBar"
+        result   = runParser module' file input
+        expected = Right mockModule { modId      = simpleModuleName "Main"
+                                    , modExports = Everything
+                                    , modImports = imports
+                                    }
+        imports =
+            [ located
+                  (Import (simpleModuleName "FooBar") Nothing Everything)
                   (file, 12)
-        ]
+            ]
+
+test_importListTests = do
+    noImportList
+    emptyImportList
+  where
+    noImportList = assertEqual (Right Everything) result
+        where result = runParser importList "" ""
+
+    emptyImportList = assertEqual (Right (Specified [])) result
+        where result = runParser importList "" "[]"
+
 
 test_importListNonEmpty = nonImplementedTest
 

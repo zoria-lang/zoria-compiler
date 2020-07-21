@@ -13,46 +13,63 @@ import           Parser.Common                  ( symbol )
 import           Control.Applicative            ( Alternative((<|>)) )
 import           Control.Monad                  ( void )
 
-test_singleLetterUppercaseName =
-    assertEqual (Right "A") (runUntilEof uppercaseIdentifier "A ")
-
-test_emptyStringUppercaseNameShouldFail = assertEqualLeft expected result
+test_uppercaseIdentifierTests = do
+    singleLetterUppercaseName
+    emptyStringUppercaseNameShouldFail
+    invalidNumberUppercaseName
+    uppercaseNameWithDigits
+    uppercaseNameWithApostrophe
+    uppercaseNameWithUnderscore
   where
-    result   = runParser uppercaseIdentifier "file" ""
-    expected = makePrettyError
-        "file"
-        ""
-        "unexpected end of input\nexpecting uppercase letter"
-        (1, 1)
+    singleLetterUppercaseName =
+        assertEqual (Right "A") (runUntilEof uppercaseIdentifier "A ")
 
-test_invalidNumberUppercaseName = assertEqualLeft expected result
+    emptyStringUppercaseNameShouldFail = assertEqualLeft expected result
+      where
+        result   = runParser uppercaseIdentifier "file" ""
+        expected = makePrettyError
+            "file"
+            ""
+            "unexpected end of input\nexpecting uppercase letter"
+            (1, 1)
+
+    invalidNumberUppercaseName = assertEqualLeft expected result
+      where
+        input    = "2137"
+        result   = runParser uppercaseIdentifier "file" input
+        expected = makePrettyError
+            "file"
+            input
+            "unexpected '2'\nexpecting uppercase letter"
+            (1, 1)
+
+    uppercaseNameWithDigits = assertEqual
+        (Right "F2o1o3b7aR")
+        (runUntilEof uppercaseIdentifier "F2o1o3b7aR")
+
+    uppercaseNameWithApostrophe =
+        assertEqual (Right "Foo'") (runUntilEof uppercaseIdentifier "Foo'")
+
+    uppercaseNameWithUnderscore = assertEqual
+        (Right "Foo_Bar")
+        (runUntilEof uppercaseIdentifier "Foo_Bar")
+
+test_keywordTests = do
+    keywordRejectsSuffix
+    keywordHasNoNumericSuffix
+    keywordEatsWhitespace
+    keywordDoesntEatWithoutFullMatch
+    requireWhitespaceBetweenKeywords
   where
-    input    = "2137"
-    result   = runParser uppercaseIdentifier "file" input
-    expected = makePrettyError "file"
-                               input
-                               "unexpected '2'\nexpecting uppercase letter"
-                               (1, 1)
+    keywordRejectsSuffix      = assertLeft $ runParser (keyword "a") "" "ab"
 
-test_uppercaseNameWithDigits = assertEqual
-    (Right "F2o1o3b7aR")
-    (runUntilEof uppercaseIdentifier "F2o1o3b7aR")
+    keywordHasNoNumericSuffix = assertLeft $ runParser (keyword "a") "" "a6"
 
-test_uppercaseNameWithApostrophe =
-    assertEqual (Right "Foo'") (runUntilEof uppercaseIdentifier "Foo'")
+    keywordEatsWhitespace     = assertRight
+        $ runUntilEof (keyword "a") "a  \n {# comment #}  \n # comment "
 
-test_uppercaseNameWithUnderscore =
-    assertEqual (Right "Foo_Bar") (runUntilEof uppercaseIdentifier "Foo_Bar")
+    keywordDoesntEatWithoutFullMatch = assertRight
+        $ runUntilEof (keyword "abc" <|> void (symbol "abcd")) "abcd"
 
-test_keywordRejectsSuffix = assertLeft $ runParser (keyword "a") "" "ab"
-
-test_keywordHasNoNumericSuffix = assertLeft $ runParser (keyword "a") "" "a6"
-
-test_keywordEatsWhitespace =
-    assertRight $ runUntilEof (keyword "a") "a  \n {# comment #}  \n # comment "
-
-test_keywordDoesntEatWithoutFullMatch =
-    assertRight $ runUntilEof (keyword "abc" <|> void (symbol "abcd")) "abcd"
-
-test_requireWhitespaceBetweenKeywords =
-    assertLeft $ runParser (keyword "a" >> keyword "b") "" "ab"
+    requireWhitespaceBetweenKeywords =
+        assertLeft $ runParser (keyword "a" >> keyword "b") "" "ab"
