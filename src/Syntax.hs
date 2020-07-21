@@ -22,7 +22,7 @@ data Located a = Located
 newtype Program a = Program 
     { programRoot :: Module a
     }
-  deriving Show
+  deriving (Show, Eq)
 
 data ModuleId = ModuleId
     { modulePrefix :: [ModName]
@@ -37,7 +37,7 @@ data Module a = Module
     , moduleExports :: Maybe [Located ImportedValue]
     , moduleDefs    :: [TopLevelDef a]
     }
-  deriving Show
+  deriving (Show, Eq)
 
 data Import a = Import
     { importMod   :: Module a
@@ -46,7 +46,7 @@ data Import a = Import
     , importLoc   :: Position
     , importIds   :: Maybe [Located ImportedValue]
     }
-  deriving Show
+  deriving (Show, Eq)
 
 data ImportedValue
     = ImportedIdentifier Identifier 
@@ -61,7 +61,7 @@ data TopLevelDef a
     | TypeDef     TDef
     | ClassDef    Class
     | InstanceDef (Instance a)
-  deriving Show
+  deriving (Show, Eq)
 
 data Definition a = Definition
     { letPattern :: Pattern a
@@ -69,7 +69,7 @@ data Definition a = Definition
     , letExpr    :: Expr a
     , letLoc     :: Position
     }
-  deriving Show
+  deriving (Show, Eq)
 
 data LetDef a
     = LetDef (Definition a)
@@ -77,7 +77,7 @@ data LetDef a
     | LetRecDef [Definition a] Position
     -- ^ a set of mutually recursive definitions.
     --   contains the position of 'let-rec' keyword
-  deriving Show
+  deriving (Eq, Show)
 
 data TAlias = TAlias
     { aliasName   :: TypeName
@@ -86,7 +86,7 @@ data TAlias = TAlias
     , aliasType   :: Type
     , aliasLoc    :: Position
     }
-  deriving Show
+  deriving (Show, Eq)
 
 data TDef = TDef
     { typeDefName   :: TypeName
@@ -95,7 +95,7 @@ data TDef = TDef
     , typeDefCases  :: [TypeCase]
     , typeDefLoc    :: Position
     }
-  deriving Show
+  deriving (Show, Eq)
 
 data Class = Class
     { className        :: TypeName
@@ -105,13 +105,13 @@ data Class = Class
     , classMembers     :: [ValSig]
     , classLoc         :: Position
     }
-  deriving Show
+  deriving (Show, Eq)
 
 data ValSig = ValSig
     { valSigName :: Identifier
     , valSigType :: TypeSig
     }
-  deriving Show
+  deriving (Show, Eq)
 
 data Constraint = Constraint
     { constraintName  :: TypeName
@@ -126,7 +126,7 @@ data Instance a = Instance
     , instanceLoc         :: Position
     , instanceConstraints :: [Constraint]
     }
-  deriving Show
+  deriving (Show, Eq)
 
 data TypeSig = TypeSig
     { typeSigConstraints :: [Constraint]
@@ -165,7 +165,7 @@ data KindSig
     -- ^ the * kind
     | TypeConstructorKind KindSig KindSig
     -- ^ the (->) kind
-  deriving Show
+  deriving (Eq, Show)
 
 data Type
     = TypeVariable  TypeVar
@@ -199,7 +199,7 @@ data PrimExpr
     -- ^ boolean value
     | UnitLit
     -- ^ () value
-  deriving Show
+  deriving (Eq, Show)
 
 data Expr a
     = Primitive PrimExpr Position a
@@ -244,18 +244,18 @@ data Expr a
     -- ^ expression with the type given explicitly (like 2 :: Int in Haskell).
     | FormatString [FormatExpr a] Position a
     -- ^ string literals and expressions to evaluate, show and concatenate
-  deriving Show
+  deriving (Eq, Show)
 
 data FormatExpr a
     = FmtStr  T.Text
     | FmtExpr (Expr a)
-  deriving Show
+  deriving (Eq, Show)
 
 data MatchCase a = MatchCase
     { matchCasePattern :: Pattern a
     , matchCaseExpr    :: Expr a
     }
-  deriving Show
+  deriving (Eq, Show)
 
 data Pattern a
     = ConstPattern PrimExpr Position a
@@ -270,7 +270,7 @@ data Pattern a
     -- ^ a pattern that matches everything and binds the value to the name
     | NamedPattern Identifier (Pattern a) Position a
     -- ^ a pattern that is named as a whole (e.g. 'tree@(Node left x right)')
-  deriving Show
+  deriving (Eq, Show)
 
 instance Functor Located where
     fmap f (Located loc a) = Located loc $ f a

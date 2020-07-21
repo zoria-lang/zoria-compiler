@@ -18,6 +18,7 @@ data Module = Module
     { modPath :: FilePath
     , modData :: RawModule
     }
+  deriving (Eq, Show)
  
 data RawModule = RawModule
     { modId      :: Ast.ModuleId
@@ -25,16 +26,19 @@ data RawModule = RawModule
     , modImports :: [Ast.Located Import]
     , modDefs    :: [TopLevelDef]
     }
+  deriving (Eq, Show)
 
 data IdentifierList
     = Everything
     | Specified [Ast.Located Ast.ImportedValue]
+  deriving (Eq, Show)
 
 data Import = Import
     { importFrom  :: Ast.ModuleId
-    , importAlias :: Maybe Ast.ModuleId
+    , importAlias :: Maybe Ast.ModName
     , importIds   :: IdentifierList
     }
+  deriving (Eq, Show)
 
 data TopLevelDef
     = OperatorDef OpDecl
@@ -43,6 +47,7 @@ data TopLevelDef
     | TypeDef     Ast.TDef
     | ClassDef    Ast.Class
     | InstanceDef Instance
+  deriving (Eq, Show)
 
 data Instance = Instance
     { instanceClass       :: Ast.TypeName
@@ -51,22 +56,30 @@ data Instance = Instance
     , instanceConstraints :: [Ast.Constraint]
     , instanceLoc         :: Position
     }
+  deriving (Eq, Show)
 
 data OpDecl = OpDecl
     { opName   :: Ast.Identifier
     , opFixity :: OpFixity
     , opPrec   :: Int
     }
+  deriving (Eq, Show)
 
-data OpFixity = LeftFix | NoneFix | RightFix
+data OpFixity 
+    = LeftFix 
+    | NoneFix 
+    | RightFix 
+  deriving  (Eq, Show)
 
 data CustomOp
     = NormalOp T.Text
     | BacktickOp T.Text
+  deriving (Eq, Show)
 
 data LetDef 
     = LetDef    Definition
     | LetRecDef [Definition] Position
+  deriving (Eq, Show)
 
 data Definition = Definition
     { letPattern :: Pattern
@@ -74,6 +87,7 @@ data Definition = Definition
     , letExpr    :: Expr
     , letLoc     :: Position
     }
+  deriving (Eq, Show)
 
 data Pattern 
     = ConstPattern Ast.PrimExpr Position 
@@ -83,10 +97,12 @@ data Pattern
     | NamedPattern Ast.Identifier Pattern Position
     | PrefixAppPattern [Pattern] Position
     | UnparsedPattern UnparsedPattern
+  deriving (Eq, Show)
 
 data UnparsedPattern
     = SinglePattern Pattern
     | BinOpPattern  BinOpPat
+  deriving (Eq, Show)
 
 data BinOpPat = BinOpPat
     { opPatternLhs :: Pattern
@@ -94,6 +110,7 @@ data BinOpPat = BinOpPat
     , opPatternRhs :: UnparsedPattern
     , opPatternPos :: Position
     }
+  deriving (Eq, Show)
 
 data Expr
     = Primitive Ast.PrimExpr Position
@@ -115,10 +132,12 @@ data Expr
     | FormatString [FormatExpr] Position
     | PrefixApp Expr Expr
     | UnparsedExpr UnparsedExpr
+  deriving (Eq, Show)
 
 data UnparsedExpr
     = SingleExpr Expr
     | BinOpExpr BinOpExpr'
+  deriving (Eq, Show)
 
 data BinOpExpr' = BinOpExpr'
     { opExprLhs :: Expr
@@ -126,12 +145,15 @@ data BinOpExpr' = BinOpExpr'
     , opExprRhs :: UnparsedExpr
     , opExprPos :: Position
     }
+  deriving (Eq, Show)
 
 data MatchCase = MatchCase
     { matchCasePattern :: Pattern
     , matchCaseExpr    :: Expr
     }
+  deriving (Eq, Show)
 
 data FormatExpr
     = FmtStr T.Text
     | FmtExpr Expr
+  deriving (Eq, Show)
