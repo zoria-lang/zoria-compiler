@@ -14,10 +14,9 @@ type Errors = P.ParseErrorBundle T.Text Void
 
 withPos :: (Position -> Parser a) -> Parser a
 withPos f = do
-    state  <- P.getParserState
-    offset <- P.getOffset
-    let file = extractFilePath state
-    f $ Position offset file
+    filePath <- extractFilePath <$> P.getParserState
+    offset   <- P.getOffset
+    f $ Position offset filePath
     where extractFilePath = P.sourceName . P.pstateSourcePos . P.statePosState
 
 lexeme :: Parser a -> Parser a

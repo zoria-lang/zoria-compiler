@@ -19,6 +19,6 @@ identifierChar :: Parser Char
 identifierChar = P.alphaNumChar <|> P.char '\'' <|> P.char '_'
 
 keyword :: T.Text -> Parser ()
-keyword kw = lexeme kwParser <?> ("keyword '" ++ T.unpack kw ++ "'")
+keyword kw = lexeme kwParser <?> T.unpack ("keyword '" <> kw <> "'")
   where
     kwParser = void . P.try $ (P.string kw <* P.notFollowedBy identifierChar)
