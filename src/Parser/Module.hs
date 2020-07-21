@@ -19,16 +19,35 @@ mockModule = RawModule { modId      = Ast.ModuleId [] (Ast.ModName "Foo")
 module' :: Parser RawModule
 module' = do
     (name, _) <- moduleHeader
-    return $ mockModule { modId = name }
+    imports   <- P.some importStatement
+    return $ mockModule { modId = name, modImports = imports }
 
 moduleHeader :: Parser (Ast.ModuleId, IdentifierList)
 moduleHeader = do
     keyword "module"
-    name <- moduleName <?> "module name"
+    name <- qualifiedModuleId
+    -- exports <- ...?
     return (name, Everything)
 
-moduleName :: Parser Ast.ModuleId
-moduleName = do
-    names <- list1' "" name "" "\\"
+moduleName :: Parser Ast.ModName
+moduleName = Ast.ModName <$> uppercaseIdentifier <?> "module name"
+
+qualifiedModuleId :: Parser Ast.ModuleId
+qualifiedModuleId = do
+    names <- list1' "" moduleName "" "\\"
     return $ Ast.ModuleId (init names) (last names)
-    where name = Ast.ModName <$> (uppercaseIdentifier <?> "module name") 
+
+importStatement :: Parser (Ast.Located Import)
+importStatement = withPos $ \pos -> do
+    keyword "import"
+    from    <- qualifiedModuleId
+    imports <- importList
+    alias   <- P.optional $ keyword "as" *> moduleName
+    return $ Ast.Located pos (Import from alias imports)
+
+importList :: Parser IdentifierList
+importList = P.option Everything (Specified <$> listOfItems)
+    where listOfItems = list' "[" importListItem "]" ","
+
+importListItem :: Parser (Ast.Located Ast.ImportedValue)
+importListItem = fail "xd"

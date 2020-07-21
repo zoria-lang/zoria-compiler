@@ -3,6 +3,7 @@ module Test.Parser.Helpers
     , runUntilEof
     , runParser'
     , runParser
+    , located
     )
 where
 
@@ -11,6 +12,11 @@ import qualified Text.Megaparsec.Char          as P
 import           Data.Text                      ( Text )
 import           Parser
 import           Control.Monad                  ( replicateM_ )
+import           Syntax                         ( Located(..) )
+import           Utility                        ( Position(..) )
+
+located :: a -> (FilePath, Int) -> Located a
+located val (path, offset) = Located (Position offset path) val
 
 untilEof :: Parser a -> Parser a
 untilEof = (<* P.eof)
