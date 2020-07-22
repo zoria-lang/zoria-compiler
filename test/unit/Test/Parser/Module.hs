@@ -11,6 +11,7 @@ import           Test.Parser.Helpers
 import           Parser.Module
 import           Parser.RawAst
 import           Data.Text                      ( Text )
+import           Utility                        ( Position(..) )
 import qualified Syntax                        as Ast
 
 
@@ -100,15 +101,32 @@ test_fullModuleTests = do
 test_importListTests = do
     noImportList
     emptyImportList
+    importListSingleSimple
+    importManySimple
   where
+    fileName = "file"
+    importedIdentifier offset =
+        Ast.Located (Position offset fileName)
+            . Ast.ImportedIdentifier
+            . Ast.Identifier
+
     noImportList = assertEqual (Right Everything) result
         where result = runParser importList "" ""
 
     emptyImportList = assertEqual (Right (Specified [])) result
-        where result = runParser importList "" "[]"
+        where result = runParser importList "" "()"
 
+    importListSingleSimple = assertEqual expected result
+      where
+        result   = runParser importList fileName "(something)"
+        expected = Right $ Specified [importedIdentifier 1 "something"]
 
-test_importListNonEmpty = nonImplementedTest
+    importManySimple = assertEqual expected result
+      where
+        result   = runParser importList fileName "(a, b)"
+        expected = Right
+            $ Specified [importedIdentifier 1 "a", importedIdentifier 4 "b"]
+
 
 test_moduleEmptyExport = nonImplementedTest
 
@@ -118,6 +136,14 @@ test_moduleExportOperator = nonImplementedTest
 
 test_multipleImports = nonImplementedTest
 
+test_importOperator = nonImplementedTest
+
+test_importType = nonImplementedTest
+
 test_moduleExportEverythingFromType = nonImplementedTest
 
 test_moduleExportTypeWithConstructors = nonImplementedTest
+
+test_moduleExportNothingFromType = nonImplementedTest
+
+test_moduleExportOperatorFromType = nonImplementedTest

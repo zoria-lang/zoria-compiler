@@ -47,7 +47,20 @@ importStatement = withPos $ \pos -> do
 
 importList :: Parser IdentifierList
 importList = P.option Everything (Specified <$> listOfItems)
-    where listOfItems = list' "[" importListItem "]" ","
+    where listOfItems = list' "(" importListItem ")" ","
 
+-- TODO: add type import items
 importListItem :: Parser (Ast.Located Ast.ImportedValue)
-importListItem = fail "xd"
+importListItem = withPos $ \pos -> Ast.Located pos <$> simpleImportListItem
+  where
+    simpleImportListItem =
+        Ast.ImportedIdentifier . Ast.Identifier <$> variableName
+
+
+
+
+
+
+
+
+

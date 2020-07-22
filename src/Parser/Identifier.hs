@@ -15,6 +15,12 @@ uppercaseIdentifier = lexeme $ do
     rest  <- P.many identifierChar
     return $ T.pack (first : rest)
 
+lowercaseIdentifier :: Parser T.Text
+lowercaseIdentifier = lexeme $ do
+    first <- P.lowerChar
+    rest  <- P.many identifierChar
+    return $ T.pack (first : rest)
+
 identifierChar :: Parser Char
 identifierChar = P.alphaNumChar <|> P.char '\'' <|> P.char '_'
 
@@ -22,3 +28,7 @@ keyword :: T.Text -> Parser ()
 keyword kw = lexeme kwParser <?> T.unpack ("keyword '" <> kw <> "'")
   where
     kwParser = void . P.try $ (P.string kw <* P.notFollowedBy identifierChar)
+
+variableName :: Parser T.Text
+-- TODO: add operators
+variableName = lowercaseIdentifier
