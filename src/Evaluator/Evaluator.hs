@@ -3,9 +3,6 @@ module Evaluator(eval) where
 import           ValueSyntax
 import           Syntax
 import           Environment
-import           Utility
-
-import qualified Data.Text                     as T
 
 evalError :: Show a => Expr a -> String -> b
 evalError expr typeString =
