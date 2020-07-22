@@ -1,4 +1,4 @@
-module Evaluator where
+module Evaluator(eval) where
 
 import           ValueSyntax
 import           Syntax
@@ -26,10 +26,9 @@ evalPrimExpr (FloatLit f) = FloatVal f
 evalPrimExpr (BoolLit  b) = BoolVal b
 evalPrimExpr UnitLit      = UnitVal
 
-evalPrimitive :: Show a => Expr a -> Environment -> IO Value
-evalPrimitive (Primitive primExpr _ _) env =
+evalPrimitive :: Show a => Expr a -> IO Value
+evalPrimitive (Primitive primExpr _ _) =
     return $ PrimitiveVal $ evalPrimExpr primExpr
-evalPrimitive expr _ = exprTypeError expr "Primitive"
 
 evalVar :: Show a => Expr a -> Environment -> IO Value
 evalVar (Var identifier _ _) env = return $ lookupIdentifier identifier env
@@ -37,43 +36,28 @@ evalVar (Var identifier _ _) env = return $ lookupIdentifier identifier env
 evalConstructor :: Show a => Expr a -> Environment -> IO Value
 evalConstructor (Constructor constructorName _ _) env =
     return $ lookupConstructorName constructorName env
-evalConstructor expr _ = exprTypeError expr "constructor"
 
 evalQualifiedVar :: Show a => Expr a -> Environment -> IO Value
 evalQualifiedVar (QualifiedVar modName identifier _ _) env = 
     return $ lookupQualifiedVar modName identifier env
-evalQualifiedVar expr _ = exprTypeError expr "QualifiedVar"
 
 evalQualifiedConstructor :: Show a => Expr a -> Environment -> IO Value
 evalQualifiedConstructor (QualifiedConstructor modName constructorName _ _) env= 
     return $ lookupQualifiedConstructor modName constructorName env
-evalQualifiedConstructor expr _ = exprTypeError expr "QualifiedConstructor"
 
 evalAnd :: Show a => Expr a -> Environment -> IO Value
 evalAnd (And leftExpr rightExpr _ _) env = do
-    leftVal <- eval leftExpr env
-    case leftVal of
-        PrimitiveVal (BoolVal False) -> return leftVal
-        PrimitiveVal (BoolVal True ) -> do
-            rightVal <- eval rightExpr env
-            case rightVal of
-                PrimitiveVal (BoolVal _) -> return rightVal
-                _                        -> evalError rightExpr "bool"
-        _ -> evalError leftExpr "Bool"
-evalAnd expr _ = exprTypeError expr "And"
+    PrimitiveVal (BoolVal leftVal) <- eval leftExpr env
+    if leftVal
+        then eval rightExpr env
+        else return $ PrimitiveVal (BoolVal False)
 
 evalOr :: Show a => Expr a -> Environment -> IO Value
 evalOr (Or leftExpr rightExpr _ _) env = do
-    leftVal <- eval leftExpr env
-    case leftVal of
-        PrimitiveVal (BoolVal True ) -> return leftVal
-        PrimitiveVal (BoolVal False) -> do
-            rightVal <- eval rightExpr env
-            case rightVal of
-                PrimitiveVal (BoolVal _) -> return rightVal
-                _                        -> error $ show rightExpr
-        _ -> evalError leftExpr "Bool"
-evalOr expr _ = exprTypeError expr "Or"
+  PrimitiveVal (BoolVal leftVal) <- eval leftExpr env
+  if leftVal
+    then return (PrimitiveVal (BoolVal True))    
+    else eval rightExpr env 
 
 evalIf :: Show a => Expr a -> Environment -> IO Value
 evalIf (If predicate consequent alternative _ _) env = do
@@ -82,7 +66,6 @@ evalIf (If predicate consequent alternative _ _) env = do
         PrimitiveVal (BoolVal True ) -> eval consequent env
         PrimitiveVal (BoolVal False) -> eval alternative env
         _                            -> evalError predicate "Bool"
-evalIf expr _ = exprTypeError expr "If"
 
 evalBlock :: Show a => Expr a -> Environment -> IO Value
 evalBlock (Block exprs _ _) env = evalSequence exprs  where
@@ -92,7 +75,6 @@ evalBlock (Block exprs _ _) env = evalSequence exprs  where
     evalSequence (firstExpr : restExprs) = do
         eval firstExpr env
         evalSequence restExprs
-evalBlock expr _ = exprTypeError expr "Block"
 
 exprUnit :: Expr a -> Expr ()
 exprUnit = fmap (const ())
@@ -103,27 +85,20 @@ evalLambda lambdaExpr@Lambda{} env = return
         makeProcedure :: Expr () -> Environment -> Value
         makeProcedure (Lambda pattern expr name _ _) env =
             Procedure pattern expr env
-evalLambda expr _ = exprTypeError expr "Lambda"
 
 evalExprList :: Show a => [Expr a] -> Environment -> IO [Value]
-evalExprList []            env = return []
-evalExprList (expr : tail) env = do
-    firstVal <- eval expr env
-    restVals <- evalExprList tail env
-    return $ firstVal : restVals
+evalExprList exprList env = mapM (\expr -> eval expr env) exprList
 
 evalTuple :: Show a => Expr a -> Environment -> IO Value
 evalTuple (Tuple exprList _ _) env = do
     valList <- evalExprList exprList env
     return $ TupleVal valList
-evalTuple expr _ = exprTypeError expr "Tuple"
 
 evalArray :: Show a => Expr a -> Environment -> IO Value
 evalArray (Array exprList _ _) env = do
     valList <- evalExprList exprList env
     return $ TupleVal valList
-evalArray expr _ = exprTypeError expr "Array"
-
+    
 matchPatternList :: [Pattern a] -> [Value] -> Maybe Environment
 matchPatternList [] [] = Just emptyEnvironment
 matchPatternList [] _ = Nothing
@@ -138,7 +113,6 @@ matchPattern (WildcardPattern _ _) _ = Just emptyEnvironment
 matchPattern (ConstPattern primExpr _ _) (PrimitiveVal primVal)
     | (evalPrimExpr primExpr) == primVal = Just emptyEnvironment
     | otherwise                          = Nothing
-matchPattern ConstPattern{} _ = Nothing
 matchPattern (TuplePattern patternList _ _) (TupleVal valList)
     | (length patternList) == (length valList) =
         matchPatternList patternList valList
@@ -150,7 +124,7 @@ matchPattern (NamedPattern identifier pattern _ _) val = do
     specificMatch <- matchPattern pattern val
     return $ insertIdentifier identifier val specificMatch
 matchPattern (ConstructorPattern patternConstructorName patterns _ _)
-            (CustomType valConstructorName values)
+            (CustomVal valConstructorName values)
     | patternConstructorName == valConstructorName = matchPatternList patterns values
     | otherwise = Nothing
 matchPattern (ConstructorPattern {}) _ = Nothing
@@ -159,6 +133,9 @@ apply :: Value -> Value -> IO Value
 apply (Procedure pattern body procEnv) argument = 
     case matchPattern pattern argument of
         Just applyEnv -> eval body (unionEnvironments procEnv applyEnv)
+apply (InternalFun f) (CustomVal listConstructorName xs) = f xs
+-- TODO: Replace listConstructorName with actual name of list constructor.
+apply someOperator someArgument = undefined
 -- TODO: apply to something else?
 
 evalApp :: Show a => Expr a -> Environment -> IO Value
@@ -166,7 +143,6 @@ evalApp (App operator argument _) env = do
     opVal  <- eval operator env
     argVal <- eval argument env
     apply opVal argVal
-evalApp expr _ = exprTypeError expr "App"
 
 evalMatch :: Show a => Expr a -> Environment -> IO Value
 evalMatch (Match expr matchCases _ _) env =  do
@@ -181,7 +157,7 @@ evalMatch (Match expr matchCases _ _) env =  do
 evalExternal :: Show a => Expr a -> Environment -> IO Value
 evalExternal (External filePath name _ _) env = undefined
 -- TODO: Parse external file and find identifier value?
-evalExternal expr _ = exprTypeError expr "External"
+
 
 evalInternal :: Show a => Expr a -> Environment -> IO Value
 evalInternal (Internal identifier _ _) env = 
@@ -195,7 +171,7 @@ evalFormatString (FormatString formatExpr _ _) env = undefined
 -- TODO: What should string look like? Decide and write eval
 
 eval :: Show a => Expr a -> Environment -> IO Value
-eval expr@Primitive{}            env = evalPrimitive expr env
+eval expr@Primitive{}            env = evalPrimitive expr
 eval expr@Var{}                  env = evalVar expr env
 eval expr@Constructor{}          env = evalConstructor expr env
 eval expr@QualifiedVar{}         env = evalQualifiedVar expr env

@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+
 module ValueSyntax where
 
 import qualified Data.Map                      as M
@@ -31,6 +33,10 @@ data Value
   = PrimitiveVal PrimVal
   | Procedure  (Pattern ()) (Expr ()) Environment
   | TupleVal [Value]
-  | CustomType ConstructorName [Value]
+  | CustomVal ConstructorName [Value]
+  | InternalFun ([Value] -> IO Value)
   deriving Show
 -- TODO: Should constructor be stored as procedure, or as
+
+instance Show ([Value] -> IO Value) where
+    show _ = "InternalFun"
