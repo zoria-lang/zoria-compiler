@@ -18,10 +18,16 @@ import qualified Syntax                        as Ast
 simpleModuleName :: Text -> Ast.ModuleId
 simpleModuleName name = Ast.ModuleId [] (Ast.ModName name)
 
+fileName :: FilePath
+fileName = "file"
+
 
 test_moduleHeaderTests = do
     noModuleNameFail
     commentBeforeModuleName
+    moduleWithQualifiedName
+    moduleEmptyExport
+    moduleSimpleExport
   where
     noModuleNameFail = assertEqualLeft expected result
       where
@@ -35,8 +41,39 @@ test_moduleHeaderTests = do
 
     commentBeforeModuleName = assertEqual expected result
       where
-        result   = runParser moduleHeader "" "module {# comment #} Main"
-        expected = Right (Ast.ModuleId [] (Ast.ModName "Main"), Everything)
+        result = runParser moduleHeader "" "module {# comment #} Foo\\Main"
+        expected =
+            Right
+                ( Ast.ModuleId [Ast.ModName "Foo"] (Ast.ModName "Main")
+                , Everything
+                )
+
+    moduleWithQualifiedName = assertEqual expected result
+      where
+        result =
+            runParser moduleHeader "" "module Foo\\Bar\\FooBar\\Fizz\\Buzz"
+        expected = Right (modId, Everything)
+        modId = Ast.ModuleId (Ast.ModName <$> ["Foo", "Bar", "FooBar", "Fizz"])
+            $ Ast.ModName "Buzz"
+
+    moduleEmptyExport = assertEqual expected result
+      where
+        result   = runParser moduleHeader fileName "module Main ()"
+        expected = Right (Ast.ModuleId [] (Ast.ModName "Main"), Specified [])
+
+    moduleSimpleExport = assertEqual expected result
+      where
+        result =
+            runParser moduleHeader fileName "module Main (foo, bar, fizzBuzz)"
+        expected =
+            Right (Ast.ModuleId [] (Ast.ModName "Main"), Specified exports)
+        export name pos =
+            Ast.Located pos (Ast.ImportedIdentifier $ Ast.Identifier name)
+        exports =
+            [ export "foo"      (Position 13 fileName)
+            , export "bar"      (Position 18 fileName)
+            , export "fizzBuzz" (Position 23 fileName)
+            ]
 
 test_moduleNameTests = do
     simpleModuleName
@@ -104,7 +141,6 @@ test_importListTests = do
     importListSingleSimple
     importManySimple
   where
-    fileName = "file"
     importedIdentifier offset =
         Ast.Located (Position offset fileName)
             . Ast.ImportedIdentifier
@@ -126,11 +162,6 @@ test_importListTests = do
         result   = runParser importList fileName "(a, b)"
         expected = Right
             $ Specified [importedIdentifier 1 "a", importedIdentifier 4 "b"]
-
-
-test_moduleEmptyExport = nonImplementedTest
-
-test_moduleSimpleExport = nonImplementedTest
 
 test_moduleExportOperator = nonImplementedTest
 

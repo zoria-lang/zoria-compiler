@@ -25,9 +25,9 @@ module' = do
 moduleHeader :: Parser (Ast.ModuleId, IdentifierList)
 moduleHeader = do
     keyword "module"
-    name <- qualifiedModuleId
-    -- exports <- ...?
-    return (name, Everything)
+    name    <- qualifiedModuleId
+    exports <- importList
+    return (name, exports)
 
 moduleName :: Parser Ast.ModName
 moduleName = Ast.ModName <$> uppercaseIdentifier <?> "module name"
