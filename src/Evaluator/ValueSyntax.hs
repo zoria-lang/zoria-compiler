@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 
-module ValueSyntax where
+module Evaluator.ValueSyntax where
 
 import qualified Data.Map                      as M
 import qualified Data.Text                     as T

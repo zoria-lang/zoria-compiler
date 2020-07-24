@@ -14,15 +14,14 @@ cabal-version:       >=1.10
 extra-source-files:  README.md
 
 library
-    hs-source-dirs:     src,
-                        src/Evaluator
+    hs-source-dirs:     src
     exposed-modules:    GetOpt,
                         GetOpt.Internal,
                         Syntax,
                         Utility,
                         Evaluator,
-                        Environment,
-                        ValueSyntax
+                        Evaluator.Environment,
+                        Evaluator.ValueSyntax
     ghc-options:        -Wunused-imports
     build-depends:      base >= 4.7 && < 5,
                         text >= 1.2.4.0,

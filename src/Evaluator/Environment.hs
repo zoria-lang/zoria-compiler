@@ -1,7 +1,7 @@
-module Environment where
+module Evaluator.Environment where
 
 import           Syntax
-import           ValueSyntax
+import           Evaluator.ValueSyntax
 
 import qualified Data.Map                      as M
 import qualified Data.Text                     as T

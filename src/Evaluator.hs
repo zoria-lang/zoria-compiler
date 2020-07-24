@@ -1,8 +1,8 @@
 module Evaluator(eval) where
 
-import           ValueSyntax
 import           Syntax
-import           Environment
+import           Evaluator.ValueSyntax
+import           Evaluator.Environment
 
 evalError :: Show a => Expr a -> String -> b
 evalError expr typeString =
