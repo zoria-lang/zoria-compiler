@@ -38,12 +38,13 @@ qualifiedModuleId = do
     return $ Ast.ModuleId (init names) (last names)
 
 importStatement :: Parser (Ast.Located Import)
-importStatement = withPos $ \pos -> do
+importStatement = do
     keyword "import"
-    from    <- qualifiedModuleId
-    imports <- importList
-    alias   <- P.optional $ keyword "as" *> moduleName
-    return $ Ast.Located pos (Import from alias imports)
+    withPos $ \pos -> do
+        from    <- qualifiedModuleId
+        imports <- importList
+        alias   <- P.optional $ keyword "as" *> moduleName
+        return $ Ast.Located pos (Import from alias imports)
 
 importList :: Parser IdentifierList
 importList = P.option Everything (Specified <$> listOfItems)

@@ -21,6 +21,10 @@ simpleModuleName name = Ast.ModuleId [] (Ast.ModName name)
 fileName :: FilePath
 fileName = "file"
 
+importElem :: Text -> Position -> Ast.Located Ast.ImportedValue
+importElem name pos =
+    Ast.Located pos (Ast.ImportedIdentifier $ Ast.Identifier name)
+
 
 test_moduleHeaderTests = do
     noModuleNameFail
@@ -67,12 +71,10 @@ test_moduleHeaderTests = do
             runParser moduleHeader fileName "module Main (foo, bar, fizzBuzz)"
         expected =
             Right (Ast.ModuleId [] (Ast.ModName "Main"), Specified exports)
-        export name pos =
-            Ast.Located pos (Ast.ImportedIdentifier $ Ast.Identifier name)
         exports =
-            [ export "foo"      (Position 13 fileName)
-            , export "bar"      (Position 18 fileName)
-            , export "fizzBuzz" (Position 23 fileName)
+            [ importElem "foo"      (Position 13 fileName)
+            , importElem "bar"      (Position 18 fileName)
+            , importElem "fizzBuzz" (Position 23 fileName)
             ]
 
 test_moduleNameTests = do
@@ -110,21 +112,21 @@ test_moduleNameTests = do
 test_fullModuleTests = do
     emptyFileFails
     moduleSimpleImports
+    multipleImports
   where
     emptyFileFails = assertEqualLeft expected result
       where
-        result   = runParser module' "file" ""
+        result   = runParser module' fileName ""
         expected = makePrettyError
-            "file"
+            fileName
             ""
             "unexpected end of input\nexpecting keyword 'module'"
             (1, 1)
 
     moduleSimpleImports = assertEqual expected result
       where
-        file     = "Main.zo"
         input    = "module Main import FooBar"
-        result   = runParser module' file input
+        result   = runParser module' fileName input
         expected = Right mockModule { modId      = simpleModuleName "Main"
                                     , modExports = Everything
                                     , modImports = imports
@@ -132,8 +134,31 @@ test_fullModuleTests = do
         imports =
             [ located
                   (Import (simpleModuleName "FooBar") Nothing Everything)
-                  (file, 12)
+                  (fileName, 19)
             ]
+
+    multipleImports = assertEqual expected result
+      where
+        result = runParser
+            module'
+            fileName
+            "module Main import Foo () import Bar import Fizz (buzz)"
+        expected = Right mockModule { modId      = simpleModuleName "Main"
+                                    , modExports = Everything
+                                    , modImports = imports
+                                    }
+        imports =
+            [ located
+                (Import (simpleModuleName "Foo") Nothing (Specified []))
+                (fileName, 19)
+            , located (Import (simpleModuleName "Bar") Nothing Everything)
+                      (fileName, 33)
+            , located
+                (Import (simpleModuleName "Fizz") Nothing (Specified [buzz]))
+                (fileName, 44)
+            ]
+            where buzz = importElem "buzz" (Position 50 fileName)
+
 
 test_importListTests = do
     noImportList
@@ -163,18 +188,21 @@ test_importListTests = do
         expected = Right
             $ Specified [importedIdentifier 1 "a", importedIdentifier 4 "b"]
 
-test_moduleExportOperator = nonImplementedTest
 
-test_multipleImports = nonImplementedTest
+test_qualifiedImport = notImplementedTest
 
-test_importOperator = nonImplementedTest
+test_importAlias = notImplementedTest
 
-test_importType = nonImplementedTest
+test_moduleExportOperator = notImplementedTest
 
-test_moduleExportEverythingFromType = nonImplementedTest
+test_importOperator = notImplementedTest
 
-test_moduleExportTypeWithConstructors = nonImplementedTest
+test_importType = notImplementedTest
 
-test_moduleExportNothingFromType = nonImplementedTest
+test_moduleExportEverythingFromType = notImplementedTest
 
-test_moduleExportOperatorFromType = nonImplementedTest
+test_moduleExportTypeWithConstructors = notImplementedTest
+
+test_moduleExportNothingFromType = notImplementedTest
+
+test_moduleExportOperatorFromType = notImplementedTest
