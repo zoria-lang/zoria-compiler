@@ -47,7 +47,8 @@ importStatement = do
         return $ Ast.Located pos (Import from alias imports)
 
 importList :: Parser IdentifierList
-importList = P.option Everything (Specified <$> listOfItems)
+importList = P.option Everything
+                      (Specified <$> listOfItems <?> "list of identifiers")
     where listOfItems = list' "(" importListItem ")" ","
 
 -- TODO: add type import items
@@ -56,12 +57,3 @@ importListItem = withPos $ \pos -> Ast.Located pos <$> simpleImportListItem
   where
     simpleImportListItem =
         Ast.ImportedIdentifier . Ast.Identifier <$> variableName
-
-
-
-
-
-
-
-
-

@@ -113,6 +113,8 @@ test_fullModuleTests = do
     emptyFileFails
     moduleSimpleImports
     multipleImports
+    qualifiedImport
+    invalidQualifiedImport
   where
     emptyFileFails = assertEqualLeft expected result
       where
@@ -159,6 +161,29 @@ test_fullModuleTests = do
             ]
             where buzz = importElem "buzz" (Position 50 fileName)
 
+    invalidQualifiedImport = assertEqualLeft expected result
+      where
+        input    = "module Main\nimport Foo.Bar"
+        result   = runParser (untilEof module') fileName input
+        expected = makePrettyError
+            fileName
+            input
+            "unexpected '.'\nexpecting '\\', end of input, keyword 'as', keyword 'import', or list of identifiers"
+            (2, 11)
+
+    qualifiedImport = assertEqual expected result
+      where
+        result =
+            runParser module' fileName "module Main import Foo\\Bar (foobar)"
+        expected = Right mockModule { modId      = simpleModuleName "Main"
+                                    , modExports = Everything
+                                    , modImports = imports
+                                    }
+        imports =
+            [located (Import modId Nothing (Specified [foobar])) (fileName, 19)]
+          where
+            modId  = Ast.ModuleId [Ast.ModName "Foo"] (Ast.ModName "Bar")
+            foobar = importElem "foobar" (Position 28 fileName)
 
 test_importListTests = do
     noImportList
@@ -187,9 +212,6 @@ test_importListTests = do
         result   = runParser importList fileName "(a, b)"
         expected = Right
             $ Specified [importedIdentifier 1 "a", importedIdentifier 4 "b"]
-
-
-test_qualifiedImport = notImplementedTest
 
 test_importAlias = notImplementedTest
 

@@ -4,6 +4,7 @@ module Test.Parser.Helpers
     , runParser'
     , runParser
     , located
+    , untilEof
     )
 where
 

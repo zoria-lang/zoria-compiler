@@ -22,7 +22,7 @@ lowercaseIdentifier = lexeme $ do
     return $ T.pack (first : rest)
 
 identifierChar :: Parser Char
-identifierChar = P.alphaNumChar <|> P.char '\'' <|> P.char '_'
+identifierChar = P.hidden $ P.alphaNumChar <|> P.char '\'' <|> P.char '_'
 
 keyword :: T.Text -> Parser ()
 keyword kw = lexeme kwParser <?> T.unpack ("keyword '" <> kw <> "'")
