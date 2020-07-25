@@ -18,11 +18,15 @@ library
     exposed-modules:    GetOpt,
                         GetOpt.Internal,
                         Syntax,
-                        Utility
+                        Utility,
+                        Evaluator,
+                        Evaluator.Environment,
+                        Evaluator.ValueSyntax
     ghc-options:        -Wunused-imports
     build-depends:      base >= 4.7 && < 5,
                         text >= 1.2.4.0,
-                        megaparsec >= 8.0.0
+                        megaparsec >= 8.0.0,
+                        containers >= 0.6.2.1
     default-language:   Haskell2010
 
 executable zoriac

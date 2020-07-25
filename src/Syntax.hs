@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveFunctor #-}
+
 module Syntax where
 
 import qualified Data.Text as T
@@ -69,7 +71,7 @@ data Definition a = Definition
     , letExpr    :: Expr a
     , letLoc     :: Position
     }
-  deriving Show
+  deriving (Show, Functor)
 
 data LetDef a
     = LetDef (Definition a)
@@ -77,7 +79,7 @@ data LetDef a
     | LetRecDef [Definition a] Position
     -- ^ a set of mutually recursive definitions.
     --   contains the position of 'let-rec' keyword
-  deriving Show
+  deriving (Show, Functor)
 
 data TAlias = TAlias
     { aliasName   :: TypeName
@@ -244,18 +246,18 @@ data Expr a
     -- ^ expression with the type given explicitly (like 2 :: Int in Haskell).
     | FormatString [FormatExpr a] Position a
     -- ^ string literals and expressions to evaluate, show and concatenate
-  deriving Show
+  deriving (Show, Functor)
 
 data FormatExpr a
     = FmtStr  T.Text
     | FmtExpr (Expr a)
-  deriving Show
+  deriving (Show, Functor)
 
 data MatchCase a = MatchCase
     { matchCasePattern :: Pattern a
     , matchCaseExpr    :: Expr a
     }
-  deriving Show
+  deriving (Show, Functor)
 
 data Pattern a
     = ConstPattern PrimExpr Position a
@@ -270,7 +272,7 @@ data Pattern a
     -- ^ a pattern that matches everything and binds the value to the name
     | NamedPattern Identifier (Pattern a) Position a
     -- ^ a pattern that is named as a whole (e.g. 'tree@(Node left x right)')
-  deriving Show
+  deriving (Show, Functor)
 
 instance Functor Located where
     fmap f (Located loc a) = Located loc $ f a
