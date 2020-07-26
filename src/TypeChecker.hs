@@ -50,11 +50,13 @@ instance Substitutable Type where
   freeTypeVar (PrimitiveType _)     = Set.empty
   freeTypeVar (TupleType types)     = freeTypeVar (types)
   freeTypeVar (NonPrimType _ )      = Set.empty
+  freeTypeVar (ArrayType t)         = freeTypeVar t
   apply subst (TypeVariable x)      = case Map.lookup x subst of
                                         Nothing -> TypeVariable x
                                         Just t -> t
   apply subst (FunctionType t1 t2)  = FunctionType (apply subst t1) (apply subst t2)
   apply subst (TupleType types)     = TupleType (apply subst types)
+  apply subst (ArrayType t)         = ArrayType (apply subst t)
   -- TODO: rest of  the types
   -- PrimitiveType, NonPrimType
   apply subst t                     = t
@@ -116,6 +118,7 @@ unify (TupleType (t1:types1)) (TupleType (t2:types2)) = do
   subst1 <- unify t1 t2
   subst2 <- unify (TupleType types1) (TupleType types2) -- apply or not?
   return (subst1 `substCompose` subst2) 
+unify (ArrayType t1) (ArrayType t2) = unify t1 t2
 -- TODO: rest of the Types
 
 -- Error message should (maybe) eventually read as in haskell:
@@ -147,7 +150,20 @@ infer (And lexpr rexpr pos _ )                 env = inferBools lexpr rexpr env
 infer (Or lexpr rexpr pos _ )                  env = inferBools lexpr rexpr env
 infer (AnnotatedExpr expr sig pos _ )          env = inferAnnotated expr sig env
 infer (Tuple exprs pos _ )                     env = inferTuple exprs env
+infer (Array exprs pos _ )                     env = inferArray exprs env
 -- TODO: rest of the Expressions
+
+
+inferArray :: [Expr a] -> Environment -> Inference (Substitution, Type)
+inferArray [expr] env = do
+  (sub,typ) <- infer expr env
+  return(sub, typ)
+inferArray (e:exprs) env = do
+  (sub1,type1) <- infer e env
+  (sub2,type2) <- inferArray exprs env
+  uniSub <- unify type1 type2
+  return (uniSub `substCompose`
+          sub2 `substCompose` sub1, ArrayType type2)
 
 inferBlock :: [Expr a] -> Environment -> Inference (Substitution, Type)
 inferBlock [expr] env = do
@@ -346,6 +362,8 @@ testBlock = LetIn ( LetDef (Definition (VarPattern (Identifier (T.pack "ignore")
                           ())
                   ()
                     
+-- Should fail with unification error BoolT vs. IntT
+testArray = Array [testPrimitiveBool, testPrimitiveInt] testPosition ()
 
 test :: Show a => Expr a -> IO ()
 test expr =
@@ -368,6 +386,7 @@ main = mapM_ test [testPrimitiveInt, -- pass
                    testAnnotated, -- pass
                    testTuple1, -- pass
                    testTuple2, -- pass
-                   testBlock
+                   testBlock, -- pass
+                   testArray
                   ]
 
