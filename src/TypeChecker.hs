@@ -44,17 +44,19 @@ class Substitutable a where
   -- in 'a' which have a mapping in the Substitution
   apply       :: Substitution -> a -> a
 
-instance Substitutable Type where -- TODO: Change to TypeSig
+instance Substitutable Type where
   freeTypeVar (TypeVariable t)      = Set.singleton t
   freeTypeVar (FunctionType t1 t2)  = (freeTypeVar t1) `Set.union` (freeTypeVar t2)
   freeTypeVar (PrimitiveType _)     = Set.empty
   freeTypeVar (TupleType types)     = freeTypeVar (types)
+  freeTypeVar (NonPrimType _ )      = Set.empty
   apply subst (TypeVariable x)      = case Map.lookup x subst of
                                         Nothing -> TypeVariable x
                                         Just t -> t
   apply subst (FunctionType t1 t2)  = FunctionType (apply subst t1) (apply subst t2)
   apply subst (TupleType types)     = TupleType (apply subst types)
   -- TODO: rest of  the types
+  -- PrimitiveType, NonPrimType
   apply subst t                     = t
 
 instance Substitutable Scheme where
@@ -103,6 +105,7 @@ instantiate (Scheme vars t) = do
 -- (BoolT -> IntT) with (a -> IntT) we get a substitution [a -> BoolT] 
 unify :: Type -> Type -> Inference Substitution
 unify (PrimitiveType v) (PrimitiveType w) | v == w = return emptySubstitution
+unify (NonPrimType v)   (NonPrimType w)   | v == w = return emptySubstitution
 unify (TypeVariable v) t = bindVariable v t
 unify t (TypeVariable v) = bindVariable v t
 unify (FunctionType l1 r1) (FunctionType l2 r2) = do
@@ -139,15 +142,25 @@ infer (Lambda pattern expr id pos _ )          env = inferLambda pattern expr en
 infer (LetIn (LetDef letdef) expr _ )          env = inferLet letdef expr env
 infer (If condition trueExpr falseExpr pos _ ) env = inferIf condition trueExpr falseExpr env
 infer (App expr1 expr2 _ )                     env = inferApp expr1 expr2 env
-infer (Block exprs pos _ )                     env = undefined -- TODO:
+infer (Block exprs pos _ )                     env = inferBlock exprs env
 infer (And lexpr rexpr pos _ )                 env = inferBools lexpr rexpr env
 infer (Or lexpr rexpr pos _ )                  env = inferBools lexpr rexpr env
 infer (AnnotatedExpr expr sig pos _ )          env = inferAnnotated expr sig env
 infer (Tuple exprs pos _ )                     env = inferTuple exprs env
 -- TODO: rest of the Expressions
 
--- Not working disaster, need to rework (that's where it hangs)
--- @inferTupleTail when a
+inferBlock :: [Expr a] -> Environment -> Inference (Substitution, Type)
+inferBlock [expr] env = do
+  (sub,typ) <- infer expr env
+  return (sub, typ)
+inferBlock (e:exprs) env = do
+  (sub1,type1) <- infer e env
+   -- each expression (except for the last one) needs to return a () value 
+  uniSub <- unify type1 (PrimitiveType UnitT)
+  let subNext = uniSub `substCompose` sub1
+  (sub2,type2) <- inferBlock exprs (apply subNext env)
+  return (subNext `substCompose` sub2, type2)
+
 inferTuple :: [Expr a] -> Environment -> Inference (Substitution, Type)
 inferTuple [expr] env = do
       (sub,typ) <- infer expr env
@@ -257,6 +270,11 @@ testVarPattern = (VarPattern testIdX testPosition ())
 testPrimitiveBool = (Primitive (BoolLit False) testPosition ())
 -- PrimitiveType IntT
 testPrimitiveInt = Primitive (IntLit 6) testPosition ()
+testLambdaVarToUnit = Lambda testVarPattern
+                             (Primitive (UnitLit) testPosition ())
+                             Nothing
+                             testPosition
+                             ()
 -- a -> IntT
 testLambdaVar = Lambda testVarPattern
                        testPrimitiveInt
@@ -294,9 +312,9 @@ testApp = App testLambdaConst --testLambdaVar
               (Primitive (BoolLit False) testPosition ())
               ()
 -- PrimitiveType BoolT
-testLetVarPattern = LetIn ( LetDef (Definition testVarPattern Nothing testPrimitiveInt testPosition))
-                            (App testLambdaConst (Var testIdX testPosition ()) ())
-                            ()
+testLetVarPattern = LetIn (LetDef (Definition testVarPattern Nothing testPrimitiveInt testPosition))
+                          (App testLambdaConst (Var testIdX testPosition ()) ())
+                          ()
 
 -- PrimitiveType BoolT
 testAnd = And testLetVarPattern (App testLambdaConst testPrimitiveInt ()) testPosition ()
@@ -304,15 +322,30 @@ testAnd = And testLetVarPattern (App testLambdaConst testPrimitiveInt ()) testPo
 -- Should fail with type unification on comparing left and right
 testOr = Or testLetVarPattern testPrimitiveInt testPosition ()
 
+-- IntT -> BoolT
 testAnnotated = AnnotatedExpr (testLambdaConst) 
                               (TypeSig [] (FunctionType (PrimitiveType IntT) (PrimitiveType BoolT))) 
                               testPosition 
                               ()
 
+-- TupleType [BoolT, IntT]
+testTuple1 = Tuple [testPrimitiveBool, testPrimitiveInt] testPosition ()
+-- TupleType [BoolT, IntT, TupleType [BoolT, IntT]]
+testTuple2 = Tuple [testPrimitiveBool, testPrimitiveInt, testTuple1] testPosition ()
 
-testTuple = Tuple [testPrimitiveBool, testPrimitiveInt] testPosition ()
-testTuple2 = Tuple [testPrimitiveBool, testPrimitiveInt, testTuple] testPosition ()
-
+-- PrimitiveType IntT
+testBlock = LetIn ( LetDef (Definition (VarPattern (Identifier (T.pack "ignore")) testPosition ())
+                           Nothing 
+                           testLambdaVarToUnit 
+                           testPosition))
+                  ( Block [App (Var (Identifier (T.pack "ignore")) testPosition ()) testPrimitiveBool (),
+                           Block [App (Var (Identifier (T.pack "ignore")) testPosition ()) testPrimitiveBool (),
+                                  (Primitive (UnitLit) testPosition ())] testPosition (),
+                           testPrimitiveInt]
+                          testPosition
+                          ())
+                  ()
+                    
 
 test :: Show a => Expr a -> IO ()
 test expr =
@@ -333,7 +366,8 @@ main = mapM_ test [testPrimitiveInt, -- pass
                    testAnd, -- pass
                    testOr, -- fail
                    testAnnotated, -- pass
-                   testTuple, -- pass
-                   testTuple2 -- pass
+                   testTuple1, -- pass
+                   testTuple2, -- pass
+                   testBlock
                   ]
 
