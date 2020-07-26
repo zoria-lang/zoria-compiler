@@ -7,12 +7,10 @@ module TypeChecker where
 import Syntax
 import Utility
 import qualified Data.Text as T
-import qualified Data.Char as C
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 import Control.Monad.Except
-import Control.Monad.Reader
 import Control.Monad.State
 
 
@@ -50,10 +48,12 @@ instance Substitutable Type where -- TODO: Change to TypeSig
   freeTypeVar (TypeVariable t)      = Set.singleton t
   freeTypeVar (FunctionType t1 t2)  = (freeTypeVar t1) `Set.union` (freeTypeVar t2)
   freeTypeVar (PrimitiveType _)     = Set.empty
+  freeTypeVar (TupleType types)     = freeTypeVar (types)
   apply subst (TypeVariable x)      = case Map.lookup x subst of
                                         Nothing -> TypeVariable x
                                         Just t -> t
   apply subst (FunctionType t1 t2)  = FunctionType (apply subst t1) (apply subst t2)
+  apply subst (TupleType types)     = TupleType (apply subst types)
   -- TODO: rest of  the types
   apply subst t                     = t
 
@@ -109,6 +109,10 @@ unify (FunctionType l1 r1) (FunctionType l2 r2) = do
   subst1 <- unify l1 l2
   subst2 <- unify (apply subst1 r1) (apply subst1 r2)
   return (subst1 `substCompose` subst2)
+unify (TupleType (t1:types1)) (TupleType (t2:types2)) = do
+  subst1 <- unify t1 t2
+  subst2 <- unify (TupleType types1) (TupleType types2) -- apply or not?
+  return (subst1 `substCompose` subst2) 
 -- TODO: rest of the Types
 
 -- Error message should (maybe) eventually read as in haskell:
@@ -139,7 +143,22 @@ infer (Block exprs pos _ )                     env = undefined -- TODO:
 infer (And lexpr rexpr pos _ )                 env = inferBools lexpr rexpr env
 infer (Or lexpr rexpr pos _ )                  env = inferBools lexpr rexpr env
 infer (AnnotatedExpr expr sig pos _ )          env = inferAnnotated expr sig env
+infer (Tuple exprs pos _ )                     env = inferTuple exprs env
 -- TODO: rest of the Expressions
+
+-- Not working disaster, need to rework (that's where it hangs)
+-- @inferTupleTail when a
+inferTuple :: [Expr a] -> Environment -> Inference (Substitution, Type)
+inferTuple [expr] env = do
+      (sub,typ) <- infer expr env
+      return(sub, TupleType [typ])
+inferTuple (e:exprs) env = do
+  (sub1,type1) <- infer e env
+  (sub2,type2) <- inferTuple exprs env
+  return (sub1 `substCompose` sub2, TupleType (type1:(fromTuple type2))) where
+    fromTuple :: Type -> [Type]
+    fromTuple (TupleType types) = types
+
 
 inferAnnotated :: Expr a -> TypeSig -> Environment -> Inference (Substitution, Type)
 inferAnnotated expr sig env = do
@@ -290,6 +309,11 @@ testAnnotated = AnnotatedExpr (testLambdaConst)
                               testPosition 
                               ()
 
+
+testTuple = Tuple [testPrimitiveBool, testPrimitiveInt] testPosition ()
+testTuple2 = Tuple [testPrimitiveBool, testPrimitiveInt, testTuple] testPosition ()
+
+
 test :: Show a => Expr a -> IO ()
 test expr =
     let (res, _) = runInference (typeInference emptyEnv expr)
@@ -308,6 +332,8 @@ main = mapM_ test [testPrimitiveInt, -- pass
                    testLetVarPattern, -- pass
                    testAnd, -- pass
                    testOr, -- fail
-                   testAnnotated -- pass
+                   testAnnotated, -- pass
+                   testTuple, -- pass
+                   testTuple2 -- pass
                   ]
 
