@@ -26,6 +26,8 @@ removeFromEnv var (Environment env) = Environment $ Map.delete var env
 extendEnv :: Environment -> (TypeVar, Scheme) -> Environment
 extendEnv (Environment env) (var, scheme) = Environment $ Map.insert var scheme env
 
+mergeEnvs :: Environment -> Environment -> Environment
+mergeEnvs (Environment env1) (Environment env2) = Environment $ Map.union env1 env2 
 
 -- Mapping from type variables to types
 -- e.g. "a" has type Primitive BoolT

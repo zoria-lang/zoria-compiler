@@ -2,8 +2,6 @@ module TypeChecker where
   -- TODO: think about (maybe) changing the naming in Syntax.hs:
   -- TypeVariable, TypeVar, Identifier
   
-  -- TODO: split TypeChecker.hs into smaller files
-
 import Syntax
 import Utility
 import TypeChecker.Inference
@@ -103,6 +101,27 @@ testBlock = LetIn ( LetDef (Definition (VarPattern (Identifier (T.pack "ignore")
 -- Should fail with unification error BoolT vs. IntT
 testArray = Array [testPrimitiveBool, testPrimitiveInt] testPosition ()
 
+testTuplePattern = TuplePattern [testVarPattern,
+                                 ConstPattern (IntLit 6) testPosition ()] 
+                                testPosition
+                                ()
+
+-- ((IntT -> b), IntT) -> b
+testLambdaTuple = Lambda testTuplePattern
+                         (App (Var testIdX testPosition ())
+                              testPrimitiveInt
+                              ())
+                         Nothing
+                         testPosition
+                         ()
+
+-- (IntT -> BoolT)
+testMatchConst = Match testPrimitiveInt
+                       [MatchCase (ConstPattern (IntLit 6) testPosition ()) testPrimitiveBool,
+                        MatchCase (WildcardPattern testPosition ()) testPrimitiveBool]
+                       testPosition
+                       ()
+                         
 test :: Show a => Expr a -> IO ()
 test expr =
     let (res, _) = runInference (typeInference emptyEnv expr)
@@ -116,6 +135,7 @@ main = mapM_ test [testPrimitiveInt, -- pass
                    testLambdaVar, -- pass
                    testLambdaVarOccur, -- fail
                    testLambdaConst, -- pass
+                   testLambdaTuple, -- pass
                    testIf, -- fail
                    testApp, -- fail
                    testLetVarPattern, -- pass
@@ -125,6 +145,7 @@ main = mapM_ test [testPrimitiveInt, -- pass
                    testTuple1, -- pass
                    testTuple2, -- pass
                    testBlock, -- pass
-                   testArray -- fail
+                   testArray, -- fail
+                   testMatchConst
                   ]
 

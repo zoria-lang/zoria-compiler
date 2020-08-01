@@ -36,6 +36,55 @@ infer (QualifiedVar modName id pos _ )         env = inferQualifiedVar modName i
 infer (QualifiedConstructor modName con pos _ )env = inferQualifiedConstructor modName con env
 infer (FormatString formatExpr pos _ )         env = inferFormatString formatExpr env
 
+
+inferPattern :: Pattern a -> Environment -> Inference (Environment, Type)
+inferPattern pattern env = case pattern of
+  TuplePattern patterns pos _ -> inferTuplePattern patterns env
+  NamedPattern (Identifier id) pattern pos _ -> inferNamedPattern (TypeVar id) pattern env
+  VarPattern (Identifier id) pos _ -> inferVarPattern (TypeVar id) env
+  ConstPattern expr pos _ -> inferConstPattern expr env
+  WildcardPattern pos _ -> inferWildcardPattern env
+  -- TODO: ConstructorPattern
+  _ -> undefined
+
+
+
+inferWildcardPattern :: Environment -> Inference (Environment, Type)
+inferWildcardPattern env = do
+  typeVar <- newTypeVar
+  return(env, typeVar)
+
+inferConstPattern :: PrimExpr -> Environment -> Inference (Environment, Type)
+inferConstPattern expr env = do
+  (_, exprType) <- inferPrimitive expr
+  return(env, exprType)
+
+inferVarPattern :: TypeVar -> Environment -> Inference (Environment, Type)
+inferVarPattern name env = do
+  typeVar <- newTypeVar
+  let env'     = extendEnv env (name, Scheme [] typeVar)
+  return(env', typeVar) 
+
+inferNamedPattern :: TypeVar -> Pattern a -> Environment -> Inference (Environment, Type)
+inferNamedPattern name pattern env = do
+  (envPattern, typePattern) <- inferPattern pattern env
+  let env' = extendEnv env (name, Scheme [] typePattern)
+  return(env', typePattern)
+
+-- Give a new environment back to the inference that called inferPattern
+-- to infer the type of MatchCase Expression
+inferTuplePattern :: [Pattern a] -> Environment -> Inference (Environment, Type)
+inferTuplePattern [pattern] env = do
+  (env',typePattern) <- inferPattern pattern env
+  return (env', TupleType [typePattern])
+inferTuplePattern (p:patterns) env = do
+  (env',typePattern) <- inferPattern p env
+  (tailEnv,tailType) <- inferTuplePattern patterns env
+  return (mergeEnvs env' tailEnv, TupleType (typePattern:(fromTuple tailType)))
+  where
+    fromTuple :: Type -> [Type]
+    fromTuple (TupleType types) = types
+
 -- infer expr and unify with pattern types
 -- unify cases' pattern types
 -- unify cases' expression types
@@ -48,14 +97,13 @@ inferMatch expr cases env = do
 
 inferMatchCases :: [MatchCase a] -> Type -> Environment -> Inference (Substitution, Type)
 inferMatchCases [matchCase] typeExpr env = do
-  (subPattern, typePattern)  <- inferPattern (matchCasePattern matchCase) env
+  (envPattern, typePattern)  <- inferPattern (matchCasePattern matchCase) env
   uniPatternSub              <- unify typePattern typeExpr
   (subCaseExpr,typeCaseExpr) <- infer (matchCaseExpr matchCase) (apply uniPatternSub env)
   return(subCaseExpr `substCompose` 
-         uniPatternSub `substCompose` 
-         subPattern, FunctionType typeExpr typeCaseExpr)
+         uniPatternSub, FunctionType typeExpr typeCaseExpr)
 inferMatchCases (c:cases) typeExpr env = do
-  (subPattern, typePattern)  <- inferPattern (matchCasePattern c) env
+  (envPattern, typePattern)  <- inferPattern (matchCasePattern c) env
   uniPatternSub              <- unify typePattern typeExpr
   (subCaseExpr,typeCaseExpr) <- infer (matchCaseExpr c) (apply uniPatternSub env)
   (subTail, typeTail)        <- inferMatchCases cases typeExpr (apply subCaseExpr env)
@@ -63,22 +111,10 @@ inferMatchCases (c:cases) typeExpr env = do
   return (uniExprSub `substCompose`
           subTail `substCompose`
           subCaseExpr `substCompose`
-          uniPatternSub `substCompose`
-          subPattern, typeTail)
+          uniPatternSub, typeTail)
   where
     resFromFunction :: Type -> Type
     resFromFunction (FunctionType typeFrom typeRes) = typeRes
-
-
--- TODO: 
-inferPattern :: Pattern a -> Environment -> Inference (Substitution, Type)
-inferPattern pattern env = undefined
--- inferPattern [pattern] env = case pattern of
---   (ConstPattern primExpr pos _ ) -> do 
---     (sub,typ) <- inferPrimitive primExpr
---     return (emptySubstitution, typ)
---   (VarPattern (Identifier id) pos _ ) -> undefined
---   _ -> undefined
     
 
 inferFormatString :: [FormatExpr a] -> Environment -> Inference (Substitution, Type)
@@ -129,7 +165,8 @@ inferTuple [expr] env = do
 inferTuple (e:exprs) env = do
   (sub1,type1) <- infer e env
   (sub2,type2) <- inferTuple exprs env
-  return (sub1 `substCompose` sub2, TupleType (type1:(fromTuple type2))) where
+  return (sub1 `substCompose` sub2, TupleType (type1:(fromTuple type2))) 
+  where
     fromTuple :: Type -> [Type]
     fromTuple (TupleType types) = types
 
@@ -169,6 +206,7 @@ inferIf condition trueExpr falseExpr env = do
           fsub `substCompose` 
           tsub `substCompose` csub, apply unitfsub ttype)
 
+-- Only LetDef, no LetRecDef yet
 inferLet :: Definition a -> Expr a -> Environment -> Inference (Substitution, Type)
 inferLet def expr env = case letPattern def of
   (ConstPattern primExpr pos _ )      -> undefined -- error? let 1 = expr??
@@ -221,7 +259,10 @@ inferLambdaConstructor (ConstructorPattern conName patterns pos _ ) expr env = u
 
 -- TODO:
 inferLambdaTuple :: Pattern a -> Expr a -> Environment -> Inference (Substitution, Type)
-inferLambdaTuple (TuplePattern patterns pos _ ) expr env = undefined 
+inferLambdaTuple (TuplePattern patterns pos _ ) expr env = do
+  (envPattern, typePattern) <- inferTuplePattern patterns env
+  (subExpr, typeExpr) <- infer expr envPattern
+  return(subExpr, FunctionType (apply subExpr typePattern) typeExpr)
 
 -- TODO:
 inferLambdaNamed :: Pattern a -> Expr a -> Environment -> Inference (Substitution, Type)
