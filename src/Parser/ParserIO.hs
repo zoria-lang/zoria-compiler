@@ -2,11 +2,10 @@ module Parser.ParserIO where
 
 import Syntax
 import Control.Monad.Trans.Reader (ReaderT, runReaderT)
-import GetOpt (Options(..), ModulePath(..))
+import GetOpt (Options(..))
 import Control.Monad.State (StateT, runStateT)
 import Data.Void (Void)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.IO.Class (liftIO)
 import qualified Control.Monad.IO.Class as IO
 import qualified Text.Megaparsec as P
 import qualified Data.Text as T

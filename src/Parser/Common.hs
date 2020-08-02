@@ -10,7 +10,6 @@ import Control.Monad.State (get, put)
 import Data.Maybe (isJust)
 import System.FilePath.Posix ((</>), (<.>))
 import Syntax
-import Text.Megaparsec ((<?>))
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Text.Megaparsec as P

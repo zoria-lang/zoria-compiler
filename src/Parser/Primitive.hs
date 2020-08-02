@@ -5,13 +5,11 @@ module Parser.Primitive where
 import Parser.ParserIO
 import Parser.Common
 import Parser.Identifier
-import Parser.Type
 import Syntax
 import Control.Applicative ((<|>))
 import Control.Monad (when)
 import Text.Megaparsec ((<?>))
 import Data.Functor (($>))
-import Utility (Position(..))
 import qualified Data.Text as T
 import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P

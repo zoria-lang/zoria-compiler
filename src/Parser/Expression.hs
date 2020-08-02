@@ -9,9 +9,7 @@ import Parser.Primitive
 import Parser.Pattern
 import Syntax
 import Control.Applicative ((<|>))
-import Control.Monad (when)
 import Text.Megaparsec ((<?>))
-import Data.Functor (($>))
 import Utility (Position(..))
 import qualified Data.Text as T
 import qualified Text.Megaparsec as P
@@ -43,7 +41,7 @@ letDef = P.try letKeyword *> (LetDef <$> definition)
 letRecDef :: ParserIO (LetDef ())
 letRecDef = withPos $ \pos -> do
     P.try (keyword "let-rec")
-    defs <- (pure <$> definition) <|> (separatedList "{" "}" definition ";")
+    defs <- (pure <$> definition) <|> separatedList "{" "}" definition ";"
     return $ LetRecDef defs pos
 
 -- Parser for the definition following the 'let' or 'let-rec' keywords.

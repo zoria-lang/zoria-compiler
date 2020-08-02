@@ -10,7 +10,6 @@ import Utility (Position(..))
 import Control.Applicative ((<|>))
 import Control.Monad (guard)
 import Data.Functor (($>))
-import qualified Data.Text as T
 import qualified Text.Megaparsec as P
 
 -- Parser for patterns which can appear either in 'match ... with' 

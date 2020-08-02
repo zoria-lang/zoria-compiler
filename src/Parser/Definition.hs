@@ -6,10 +6,9 @@ import Parser.Common
 import Parser.Type
 import Parser.Identifier
 import Parser.Expression
-import Parser.Pattern
 import Syntax
 import Utility (Position(..))
-import Control.Monad (mapM_, when)
+import Control.Monad (when)
 import Control.Applicative ((<|>))
 import Text.Megaparsec ((<?>))
 import Data.Maybe (maybeToList)

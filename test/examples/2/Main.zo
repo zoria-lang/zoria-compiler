@@ -1,0 +1,7 @@
+module Main
+
+import Foo
+
+let main := {
+    foo $ bar $ 2 + 2 * 2;
+}

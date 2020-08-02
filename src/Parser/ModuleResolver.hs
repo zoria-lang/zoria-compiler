@@ -163,7 +163,7 @@ getImplicitConstructors = undefined -- TODO: implement
 -- Add the constructor information to the global table. Only the exported
 -- constructors will be visible.
 exportConstructors :: ParserIO ()
-exportConstructors = undefined -- TODO: implement
+exportConstructors = return () -- TODO: implement
 
 -- Adds all locally defined operators that are supposed to be exported to
 -- the global operator export table.
@@ -181,7 +181,7 @@ exportOperatorsAux :: [T.Text] -> ParserIO ()
 exportOperatorsAux exports = do
     state <- getState
     let opTable   = stateCurrentOps state
-        opList    = foldr (++) [] opTable
+        opList    = concat opTable
         globalOps = stateExportedOps state
         exports'  = filter (isOp opList) exports
     insertOpExports opTable opList exports' globalOps []

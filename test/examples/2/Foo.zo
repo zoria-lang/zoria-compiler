@@ -1,0 +1,7 @@
+module Foo
+
+let-infix $ 10 right
+
+let-infix + 5 left
+
+let-infix * 3 left

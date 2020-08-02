@@ -9,7 +9,6 @@ import Text.Megaparsec ((<?>))
 import Control.Applicative ((<|>))
 import Data.Functor (($>))
 import qualified Text.Megaparsec as P
-import qualified Text.Megaparsec.Char as P
 import qualified Data.Text as T
 
 -- Parser for type names (e.g. Maybe, Int, [])

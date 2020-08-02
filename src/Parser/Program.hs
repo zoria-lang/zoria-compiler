@@ -13,9 +13,7 @@ import Data.Maybe (catMaybes)
 import Control.Applicative ((<|>))
 import Control.Monad (forM)
 import Text.Megaparsec ((<?>))
-import qualified Data.Text as T
 import qualified Text.Megaparsec as P
-import qualified Data.Map.Strict as Map
 
 -- Parser of programs. It is supposed to be used once.
 program :: ParserIO (Program ())
