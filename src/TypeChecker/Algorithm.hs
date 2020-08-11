@@ -13,10 +13,10 @@ import Control.Monad.State
 
 
 -- Type Scheme e.g.   ∀a,b.    a -> b -> a
-data Scheme = Scheme [TypeVar] Type
+data Scheme = Scheme [TypeVar] Type deriving(Show)
 
 -- 
-newtype Environment = Environment (Map.Map TypeVar Scheme)
+newtype Environment = Environment (Map.Map TypeVar Scheme) deriving(Show)
 emptyEnv :: Environment
 emptyEnv = Environment Map.empty
 
@@ -97,7 +97,7 @@ unify (TupleType (t1:types1)) (TupleType (t2:types2)) = do
   subst2 <- unify (TupleType types1) (TupleType types2) -- apply or not?
   return (subst1 `substCompose` subst2) 
 unify (ArrayType t1) (ArrayType t2) = unify t1 t2
--- TODO: rest of the Types
+-- TODO: rest of the Types (ParamType, PolymorphicParamType)
 
 -- Error message should (maybe) eventually read as in haskell:
 -- "Expected type: t vs. actual type: t2 at position..."
