@@ -1,9 +1,9 @@
 module Main where
 
-import GetOpt
-
+import Parser
+import qualified Data.Text.IO as T
+import PrettyPrint (prettyPrint)
+import qualified Evaluator as Eval
 
 main :: IO ()
-main = do
-    options <- getOptions
-    print options
+main = parseProgram >>= T.putStrLn . prettyPrint 0

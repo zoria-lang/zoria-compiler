@@ -18,6 +18,18 @@ library
     exposed-modules:    GetOpt,
                         GetOpt.Internal,
                         Syntax,
+                        Parser.ParserIO,
+                        Parser.Common
+                        Parser.Program
+                        Parser.Identifier
+                        Parser.Type
+                        Parser.Definition
+                        Parser.Expression
+                        Parser.Pattern
+                        Parser.Primitive
+                        Parser.ModuleResolver
+                        Parser,
+                        PrettyPrint,
                         Utility,
                         Evaluator,
                         Evaluator.Environment,
@@ -26,7 +38,12 @@ library
     build-depends:      base >= 4.7 && < 5,
                         text >= 1.2.4.0,
                         megaparsec >= 8.0.0,
-                        containers >= 0.6.2.1
+                        containers >= 0.6.2.1,
+                        mtl >= 2.2.2,
+                        transformers >= 0.5.6.2,
+                        filepath >= 1.4.2.1,
+                        directory >= 1.3.6.0
+
     default-language:   Haskell2010
 
 executable zoriac
@@ -34,7 +51,10 @@ executable zoriac
     main-is:            Main.hs
     build-depends:      zoria-lang,
                         base >= 4.7 && < 5,
-                        HTF >= 0.14.0.3
+                        -- HTF should be removed in the final version but
+                        -- i've put it because ghcide complained otherwise
+                        HTF >= 0.14.0.3,
+                        text >= 1.2.4.0
     default-language:   Haskell2010
 
 test-suite unit-tests
