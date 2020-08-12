@@ -27,9 +27,9 @@ infer (Or lexpr rexpr pos _ )                  env = inferBools lexpr rexpr env
 infer (AnnotatedExpr expr sig pos _ )          env = inferAnnotated expr sig env
 infer (Tuple exprs pos _ )                     env = inferTuple exprs env
 infer (Array exprs pos _ )                     env = inferArray exprs env
--- TODO: rest below
 infer (Match expr cases pos _ )                env = inferMatch expr cases env
 infer (Constructor name pos _ )                env = inferConstructor name env
+-- TODO: rest below
 infer (Internal id pos _ )                     env = inferInternal id env 
 -- qualified should have another environment? other imports can(?) land in normal env
 infer (QualifiedVar modName id pos _ )         env = inferQualifiedVar modName id env
@@ -44,9 +44,13 @@ inferPattern pattern env = case pattern of
   VarPattern (Identifier id) pos _           -> inferVarPattern (TypeVar id) env
   ConstPattern expr pos _                    -> inferConstPattern expr env
   WildcardPattern pos _                      -> inferWildcardPattern env
-  -- TODO: ConstructorPattern
-  _ -> undefined
-
+  ConstructorPattern name patterns pos _     -> inferConstructorWithType name patterns env
+  where
+    inferConstructorWithType :: ConstructorName -> [Pattern a] -> Environment -> Inference (Environment, Type)
+    inferConstructorWithType name patterns env = do
+      (sub, constrType) <- inferConstructor name env
+      inferConstructorPattern name constrType patterns env
+  
 
 
 inferWildcardPattern :: Environment -> Inference (Environment, Type)
@@ -168,7 +172,7 @@ inferBlock (e:exprs) env = do
   uniSub       <- unify type1 (PrimitiveType UnitT)
   let subNext  = uniSub `substCompose` sub1
   (sub2,type2) <- inferBlock exprs (apply subNext env)
-  return (subNext `substCompose` sub2, type2)
+  return (sub2 `substCompose` subNext, type2)
 
 inferTuple :: [Expr a] -> Environment -> Inference (Substitution, Type)
 inferTuple [expr] env = do
@@ -177,7 +181,7 @@ inferTuple [expr] env = do
 inferTuple (e:exprs) env = do
   (sub1,type1) <- infer e env
   (sub2,type2) <- inferTuple exprs env
-  return (sub1 `substCompose` sub2, TupleType (type1:(fromTuple type2))) 
+  return (sub2 `substCompose` sub1, TupleType (type1:(fromTuple type2))) 
   where
     fromTuple :: Type -> [Type]
     fromTuple (TupleType types) = types
@@ -226,16 +230,27 @@ inferLet def expr env = case letPattern def of
   -- TODO: take letTypeSig in consideration
   (VarPattern (Identifier id) pos _ ) -> inferLetVarPattern (TypeVar id) (letExpr def) expr env
   -- TODO: rest of the patterns
+  p@(TuplePattern patterns pos _ ) -> inferLetTuplePattern p (letExpr def) expr env
   _ -> undefined
+
+inferLetTuplePattern :: Pattern a -> Expr a -> Expr a -> Environment -> Inference (Substitution, Type)
+inferLetTuplePattern pattern defExpr expr env = do
+  (patternEnv, patternType) <- inferPattern pattern env
+  (subDef, typeDef) <- infer defExpr env
+  unified <- unify typeDef patternType
+  let env' = apply (unified `substCompose` subDef) patternEnv
+  (subExpr, typeExpr) <- infer expr env'
+  return(subExpr `substCompose` 
+         unified `substCompose` subDef, typeExpr)
 
 inferLetVarPattern :: TypeVar -> Expr a -> Expr a -> Environment -> Inference (Substitution, Type)
 inferLetVarPattern defName defExpr expr env = do 
-    (sub1, type1) <- infer defExpr env
-    let env'          = apply sub1 env
+    (subDef, typeDef) <- infer defExpr env
+    let env'          = apply subDef env
      -- no generalization for now, link for reference
      -- https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tldi10-vytiniotis.pdf
-    (sub2, type2) <- infer expr (extendEnv env' (defName, (Scheme [] type1))) 
-    return (sub1 `substCompose` sub2, type2)
+    (subExpr, typeExpr) <- infer expr (extendEnv env' (defName, (Scheme [] typeDef))) 
+    return (subExpr `substCompose` subDef, typeExpr)
 
 -- TODO: take in the name (Maybe T.Text)
 inferLambda :: Pattern a -> Expr a -> Environment -> Inference (Substitution, Type)
@@ -266,9 +281,12 @@ inferLambdaWildcard (WildcardPattern pos _ ) expr env = do
   (sub,typ) <- infer expr env
   return(sub, FunctionType typeVar typ)
 
--- TODO:
 inferLambdaConstructor :: Pattern a -> Expr a -> Environment -> Inference (Substitution, Type)
-inferLambdaConstructor (ConstructorPattern conName patterns pos _ ) expr env = undefined
+inferLambdaConstructor p@(ConstructorPattern name _ pos _ ) expr env = do
+  (envPattern, typePattern) <- inferPattern p env
+  (subExpr, typeExpr) <- infer expr envPattern
+  return (subExpr, FunctionType typePattern typeExpr)
+
 
 inferLambdaTuple :: Pattern a -> Expr a -> Environment -> Inference (Substitution, Type)
 inferLambdaTuple pattern expr env = do
@@ -368,15 +386,50 @@ typecheckTopLevelLet :: Definition a -> Environment -> Either String Environment
 typecheckTopLevelLet def env = case letPattern def of
   -- TODO: take letTypeSig in consideration
   (VarPattern (Identifier id) pos _ ) -> 
-    let res = inferLetDefVarPattern (letExpr def) env
+    let res = inferLetDefExpr (letExpr def) env
     in case res of
         Left err -> Left err
         Right t  -> Right (extendEnv env (TypeVar id, Scheme [] t))
-  -- TODO: rest of the patterns
-  _ -> undefined
+  p@(TuplePattern _ pos _ ) -> 
+    let resPattern = inferLetDefComplexPattern p def env
+    in case resPattern of
+        Left err -> Left err
+        Right (env', exprType) -> Right env' 
+  p@(ConstructorPattern _ _ pos _ ) -> 
+    let resPattern = inferLetDefComplexPattern p def env
+    in case resPattern of
+        Left err -> Left err
+        Right (env', exprType) -> Right env' 
+  (NamedPattern (Identifier id) pattern pos _ ) ->
+    let resPattern = inferLetDefComplexPattern pattern def env
+    in case resPattern of
+      Left err -> Left err
+      Right (env', exprType) -> 
+        Right $ extendEnv env' (TypeVar id, Scheme [] exprType)
 
-inferLetDefVarPattern :: Expr a -> Environment -> Either String Type
-inferLetDefVarPattern defExpr env =
-    -- maybe take the defName into the env (either here or higher up)
+  _ -> Left $ "Error: Illegal operation"
+
+inferLetDefComplexPattern :: Pattern a -> Definition a -> Environment -> Either String (Environment, Type)
+inferLetDefComplexPattern p def env =
+  let resExpr = inferLetDefExpr (letExpr def) env
+      resPatt = inferLetDefPattern p env
+  in case resExpr of
+    Left err -> Left err
+    Right exprType ->
+      case resPatt of
+        Left err -> Left err
+        Right (patternEnv, patternType) -> 
+          let (uniSub, _) = runInference $ unify patternType exprType
+          in case uniSub of
+            Left err -> Left err
+            Right sub -> Right (apply sub env, exprType)
+
+inferLetDefPattern :: Pattern a -> Environment -> Either String (Environment, Type)
+inferLetDefPattern pattern env =
+  let (res, _) = runInference $ inferPattern pattern env
+  in res
+
+inferLetDefExpr :: Expr a -> Environment -> Either String Type
+inferLetDefExpr defExpr env =
     let (res, _ ) = runInference $ inferExpr env defExpr
     in res

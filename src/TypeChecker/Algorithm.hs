@@ -92,6 +92,7 @@ unify (FunctionType l1 r1) (FunctionType l2 r2) = do
   subst1 <- unify l1 l2
   subst2 <- unify (apply subst1 r1) (apply subst1 r2)
   return (subst1 `substCompose` subst2)
+unify (TupleType []) (TupleType []) = return (emptySubstitution)
 unify (TupleType (t1:types1)) (TupleType (t2:types2)) = do
   subst1 <- unify t1 t2
   subst2 <- unify (TupleType types1) (TupleType types2) -- apply or not?

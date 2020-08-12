@@ -123,6 +123,18 @@ testMatchConst = Match testPrimitiveInt
                         MatchCase (WildcardPattern testPosition ()) testPrimitiveBool]
                        testPosition
                        ()
+
+testTuplePattern2 = TuplePattern [testVarPattern,
+                                  (VarPattern (Identifier (T.pack "g")) testPosition ())]
+                                 testPosition
+                                 ()
+-- (Bool, Int)
+testLetTuplePattern = LetIn (LetDef (Definition testTuplePattern2 Nothing testTuple1 testPosition))
+                          (Tuple [Var testIdX testPosition (),
+                                  Var (Identifier (T.pack "g")) testPosition ()]
+                                 testPosition
+                                 ())
+                          ()
                          
 test :: Show a => Expr a -> IO ()
 test expr =
@@ -148,7 +160,8 @@ main = mapM_ test [testPrimitiveInt, -- pass
                    testTuple2, -- pass
                    testBlock, -- pass
                    testArray, -- fail
-                   testMatchConst
+                   testMatchConst,
+                   testLetTuplePattern
                   ]
 
 topLevelTypeDef = TypeDef $ TDef (TypeName (T.pack "TestType"))
