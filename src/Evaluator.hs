@@ -3,6 +3,7 @@ module Evaluator(eval) where
 import           Syntax
 import           Evaluator.ValueSyntax
 import           Evaluator.Environment
+import Control.Monad
 
 evalError :: Show a => Expr a -> String -> b
 evalError expr typeString =
@@ -17,11 +18,12 @@ exprTypeError expr typeString =
     error $ "Expression" ++ show expr ++ "\nis not of type " ++ typeString
 
 evalPrimExpr :: PrimExpr -> PrimVal
-evalPrimExpr (IntLit   n) = IntVal n
-evalPrimExpr (CharLit  c) = CharVal c
-evalPrimExpr (FloatLit f) = FloatVal f
-evalPrimExpr (BoolLit  b) = BoolVal b
-evalPrimExpr UnitLit      = UnitVal
+evalPrimExpr (IntLit    n   ) = IntVal n
+evalPrimExpr (CharLit   c   ) = CharVal c
+evalPrimExpr (FloatLit  f   ) = FloatVal f
+evalPrimExpr (BoolLit   b   ) = BoolVal b
+evalPrimExpr (StringLit text) = StringVal text
+evalPrimExpr UnitLit          = UnitVal
 
 evalPrimitive :: Show a => Expr a -> IO Value
 evalPrimitive (Primitive primExpr _ _) =
@@ -75,6 +77,31 @@ evalBlock (Block exprs _ _) env = evalSequence exprs  where
 
 exprUnit :: Expr a -> Expr ()
 exprUnit = fmap (const ())
+
+evalDefinition :: Show a => Definition a -> Environment -> IO Environment
+evalDefinition (Definition pattern _ expr _) env = do
+    value <- eval expr env
+    case matchPattern pattern value of
+        (Just environment) -> return environment
+        Nothing -> error "Failed pattern matching in LetDef"
+
+-- TODO: This is probably wrong
+evalDefinitions :: Show a => [Definition a] -> Environment -> IO Environment
+evalDefinitions [] _ = return emptyEnvironment
+evalDefinitions [def] env = evalDefinition def env
+evalDefinitions (def:defs) env = do
+    headEnv <- evalDefinition def env
+    tailEnv <- evalDefinitions defs env
+    return $ unionEnvironments headEnv tailEnv
+
+evalLetDef :: Show a => LetDef a -> Environment -> IO Environment
+evalLetDef (LetDef definition) env = evalDefinition definition env
+evalLetDef (LetRecDef definitions _) env = evalDefinitions definitions env
+
+evalLetIn :: Show a => Expr a -> Environment -> IO Value
+evalLetIn (LetIn letDef expr _) env = do
+    defEnv <- evalLetDef letDef env
+    eval expr (unionEnvironments defEnv env)
 
 evalLambda :: Show a => Expr a -> Environment -> IO Value
 evalLambda lambdaExpr@Lambda{} env = return
@@ -177,6 +204,7 @@ eval expr@And{}                  env = evalAnd expr env
 eval expr@Or{}                   env = evalOr expr env
 eval expr@If{}                   env = evalIf expr env
 eval expr@Block{}                env = evalBlock expr env
+eval expr@LetIn{}                env = evalLetIn expr env
 eval expr@Lambda{}               env = evalLambda expr env
 eval expr@Tuple{}                env = evalTuple expr env
 eval expr@App{}                  env = evalApp expr env

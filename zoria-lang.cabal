@@ -42,8 +42,9 @@ test-suite unit-tests
     main-is:            Main.hs
     hs-source-dirs:     test/unit
     other-modules:      GetOptTests,
-                        Test.TestEvaluator.Eval
+                        Test.EvaluatorTests.EvalTests
     build-depends:      zoria-lang,
                         base >= 4.7 && < 5,
-                        HTF >= 0.14.0.3
+                        HTF >= 0.14.0.3,
+                        text >= 1.2.4.0
     default-language:   Haskell2010

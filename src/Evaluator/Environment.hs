@@ -48,5 +48,3 @@ insertIdentifier (Identifier name) val env = extendEnvironment name val env
 unionEnvironments :: Environment -> Environment -> Environment
 unionEnvironments (Environment leftEnv) (Environment rightEnv) =
     Environment $ M.union leftEnv rightEnv
-
-
