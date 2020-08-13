@@ -1,0 +1,7 @@
+module Foo
+
+type Maybe a with
+    case Nothing
+    case Just a
+    
+let ignore x := ()
