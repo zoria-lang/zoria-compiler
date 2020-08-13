@@ -12,6 +12,8 @@ class PrettyPrint a where
 indent :: Int -> T.Text
 indent i = T.concat (replicate i "\t")
 
+customMap f xs = (map f (init xs)) ++ [(prettyPrint 0 (last xs))]  
+
 instance PrettyPrint (Expr a) where
     prettyPrint i (Primitive p _ _) = 
         indent i <> prettyPrint i p
@@ -44,12 +46,12 @@ instance PrettyPrint (Expr a) where
     prettyPrint i (Tuple exprs _ _) = 
         indent i 
             <> "(" 
-            <> T.concat (map ((<> ", ") . prettyPrint 0) exprs) 
+            <> T.concat (customMap ((<> ", ") . prettyPrint 0) exprs) 
             <> ")"
     prettyPrint i (Array exprs _ _) =
         indent i 
             <> "[<" 
-            <> T.concat (map ((<> ", ") . prettyPrint 0) exprs) 
+            <> T.concat (customMap ((<> ", ") . prettyPrint 0) exprs) 
             <> ">]"
     prettyPrint i (App f arg a) =
         indent i <> "(" <> prettyPrint 0 f <> " " <> prettyPrint 0 arg <> ")"
@@ -110,7 +112,10 @@ instance PrettyPrint Type where
     prettyPrint i (PolymorphicParamType (TypeVar var) args) =
         indent i <> var <> T.concat (map ((" " <>) . prettyPrint 0) args)
     prettyPrint i (TupleType types) =
-        indent i <> T.concat (map ((<> ", ") . prettyPrint 0) types)
+        indent i 
+        <> "("
+        <> T.concat (customMap ((<> ", ") . prettyPrint 0) types)
+        <> ")"
     prettyPrint i (ArrayType t) =
         indent i <> "[<" <> prettyPrint 0 t <> ">]"
 
@@ -137,7 +142,7 @@ instance PrettyPrint (Pattern a) where
     prettyPrint i (TuplePattern patterns _ _) =
         indent i
             <> "("
-            <> T.concat (map ((<> ", ") . prettyPrint 0) patterns)
+            <> T.concat (customMap ((<> ", ") . prettyPrint 0) patterns)
             <> ")"
     prettyPrint i (ConstPattern expr _ _) =
         indent i <> prettyPrint 0 expr

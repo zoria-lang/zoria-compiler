@@ -13,190 +13,16 @@ import qualified Data.Text as T
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-
+import System.Exit (exitFailure)
 import Control.Monad.Except
 import Control.Monad.State
 
-testPosition = Utility.Position 0 ""
-testIdX = Identifier (T.pack "x")
-testVarPattern = (VarPattern testIdX testPosition ())
--- Bool
-testPrimitiveBool = (Primitive (BoolLit False) testPosition ())
--- Int
-testPrimitiveInt = Primitive (IntLit 6) testPosition ()
-testLambdaVarToUnit = Lambda testVarPattern
-                             (Primitive (UnitLit) testPosition ())
-                             Nothing
-                             testPosition
-                             ()
--- a -> Int
-testLambdaVar = Lambda testVarPattern
-                       testPrimitiveInt
-                       -- (Var testIdX testPosition ()) 
-                       Nothing 
-                       testPosition
-                       ()
--- Should fail with occur check
-testLambdaVarOccur = Lambda testVarPattern
-                            (App (Var testIdX testPosition ())
-                                 (Var testIdX testPosition ()) ())
-                            -- (Var testIdX testPosition ()) 
-                            Nothing 
-                            testPosition
-                            ()
--- Int -> Bool
-testLambdaConst = Lambda (ConstPattern (IntLit 6) testPosition ()) 
-                         testPrimitiveBool
-                         -- (Var testIdX testPosition ()) 
-                         Nothing 
-                         testPosition
-                         ()
--- Should fail with type unification (Bool -> Bool) u (Int -> Bool)
-testIf = If (Primitive (BoolLit True) testPosition ())
-            (Lambda (ConstPattern (BoolLit True) testPosition ()) 
-                    testPrimitiveBool
-                    Nothing 
-                    testPosition
-                    ())
-            testLambdaConst
-            testPosition
-            ()
--- Should fail with type unification
-testApp = App testLambdaConst --testLambdaVar
-              (Primitive (BoolLit False) testPosition ())
-              ()
--- Bool
-testLetVarPattern = LetIn (LetDef (Definition testVarPattern Nothing testPrimitiveInt testPosition))
-                          (App testLambdaConst (Var testIdX testPosition ()) ())
-                          ()
-
--- Bool
-testAnd = And testLetVarPattern (App testLambdaConst testPrimitiveInt ()) testPosition ()
-
--- Should fail with type unification on comparing left and right
-testOr = Or testLetVarPattern testPrimitiveInt testPosition ()
-
--- Int -> Bool
-testAnnotated = AnnotatedExpr (testLambdaConst) 
-                              (TypeSig [] (FunctionType (PrimitiveType IntT) (PrimitiveType BoolT))) 
-                              testPosition 
-                              ()
-
--- (Bool, Int)
-testTuple1 = Tuple [testPrimitiveBool, testPrimitiveInt] testPosition ()
--- (Bool, Int, (Bool, Int))
-testTuple2 = Tuple [testPrimitiveBool, testPrimitiveInt, testTuple1] testPosition ()
-
--- Int
-testBlock = LetIn ( LetDef (Definition (VarPattern (Identifier (T.pack "ignore")) testPosition ())
-                           Nothing 
-                           testLambdaVarToUnit 
-                           testPosition))
-                  ( Block [App (Var (Identifier (T.pack "ignore")) testPosition ()) testPrimitiveBool (),
-                           Block [App (Var (Identifier (T.pack "ignore")) testPosition ()) testPrimitiveBool (),
-                                  (Primitive (UnitLit) testPosition ())] testPosition (),
-                           testPrimitiveInt]
-                          testPosition
-                          ())
-                  ()
-                    
--- Should fail with unification error BoolT vs. IntT
-testArray = Array [testPrimitiveBool, testPrimitiveInt] testPosition ()
-
-testTuplePattern = TuplePattern [testVarPattern,
-                                 ConstPattern (IntLit 6) testPosition ()] 
-                                testPosition
-                                ()
-
--- ((Int -> b), Int) -> b
-testLambdaTuple = Lambda testTuplePattern
-                         (App (Var testIdX testPosition ())
-                              testPrimitiveInt
-                              ())
-                         Nothing
-                         testPosition
-                         ()
-
--- (Int -> Bool)
-testMatchConst = Match testPrimitiveInt
-                       [MatchCase (ConstPattern (IntLit 6) testPosition ()) testPrimitiveBool,
-                        MatchCase (WildcardPattern testPosition ()) testPrimitiveBool]
-                       testPosition
-                       ()
-
-testTuplePattern2 = TuplePattern [testVarPattern,
-                                  (VarPattern (Identifier (T.pack "g")) testPosition ())]
-                                 testPosition
-                                 ()
--- (Bool, Int)
-testLetTuplePattern = LetIn (LetDef (Definition testTuplePattern2 Nothing testTuple1 testPosition))
-                          (Tuple [Var testIdX testPosition (),
-                                  Var (Identifier (T.pack "g")) testPosition ()]
-                                 testPosition
-                                 ())
-                          ()
-                         
-test :: Show a => Expr a -> IO ()
-test expr =
-    let (res, _) = runInference (inferExpr emptyEnv expr)
-    in case res of
-         Left err  ->  putStrLn $ "error: " ++ err
-         Right t   ->  putStrLn $ show t
-
-
-main :: IO ()
-main = mapM_ test [testPrimitiveInt, -- pass 
-                   testLambdaVar, -- pass
-                   testLambdaVarOccur, -- fail
-                   testLambdaConst, -- pass
-                   testLambdaTuple, -- pass
-                   testIf, -- fail
-                   testApp, -- fail
-                   testLetVarPattern, -- pass
-                   testAnd, -- pass
-                   testOr, -- fail
-                   testAnnotated, -- pass
-                   testTuple1, -- pass
-                   testTuple2, -- pass
-                   testBlock, -- pass
-                   testArray, -- fail
-                   testMatchConst,
-                   testLetTuplePattern
-                  ]
-
-topLevelTypeDef = TypeDef $ TDef (TypeName (T.pack "TestType"))
-                                 []
-                                 Nothing
-                                 [TypeCase (ConstructorName (T.pack "TestConstr")) 
-                                           [PrimitiveType IntT, PrimitiveType BoolT]
-                                           testPosition]
-                                 testPosition
-
-topLevelLetDef1 = TopLevelLet (LetDef (Definition (VarPattern (Identifier (T.pack "ignore")) testPosition ())
-                                    Nothing 
-                                    testLambdaVarToUnit 
-                                    testPosition))
-topLevelLetDef2 = TopLevelLet ((LetDef (Definition 
-                                     testVarPattern
-                                     Nothing
-                                     testPrimitiveInt
-                                     testPosition)))
-
-topLevelLetDef3 = TopLevelLet ((LetDef (Definition (VarPattern (Identifier (T.pack "constructed")) testPosition ())
-                                     Nothing
-                                     (App (App (Constructor (ConstructorName (T.pack "TestConstr")) testPosition ()) testPrimitiveInt ())
-                                          testPrimitiveBool ())
-                                     testPosition)))
-
-testProgram = Program (Module (ModuleId [] (ModName (T.pack"testMod")))
-                              "./test"
-                              []
-                              Nothing
-                              [topLevelTypeDef, topLevelLetDef1, topLevelLetDef2, topLevelLetDef3])
-
-
-typecheckProgram :: Program a -> IO (Either [String] Environment)
-typecheckProgram program = typecheckModule $ programRoot program
+typecheckProgram :: Program a -> IO (Environment)
+typecheckProgram program = do
+    result <- typecheckModule $ programRoot program
+    case result of
+        Left err -> exitFailure
+        Right env -> return env
 
 
 typecheckModule :: Module a -> IO (Either [String] Environment)
@@ -236,6 +62,7 @@ typecheckImports (i:imports) = do
 
 
 typecheckDefs :: [TopLevelDef a] -> Environment -> Either [String] Environment
+typecheckDefs [] env = Right emptyEnv
 typecheckDefs [def] env = 
     case def of
         TopLevelLet (LetDef letDef) -> 
@@ -243,6 +70,9 @@ typecheckDefs [def] env =
             in handleResult res
         AliasDef alias -> 
             let res = typecheckAlias alias env
+            in handleResult res
+        TypeDef typeDef ->
+            let res = typecheckTypeDef typeDef env
             in handleResult res
         _ -> undefined
     where

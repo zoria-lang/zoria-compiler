@@ -33,7 +33,10 @@ library
                         Utility,
                         Evaluator,
                         Evaluator.Environment,
-                        Evaluator.ValueSyntax
+                        Evaluator.ValueSyntax,
+                        TypeChecker,
+                        TypeChecker.Algorithm,
+                        TypeChecker.Inference
     ghc-options:        -Wunused-imports
     build-depends:      base >= 4.7 && < 5,
                         text >= 1.2.4.0,

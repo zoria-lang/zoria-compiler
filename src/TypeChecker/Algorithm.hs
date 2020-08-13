@@ -2,6 +2,7 @@ module TypeChecker.Algorithm where
 
 import Syntax
 import Utility
+import PrettyPrint(prettyPrint)
 
 import qualified Data.Text as T
 import qualified Data.Map as Map
@@ -15,7 +16,7 @@ import Control.Monad.State
 -- Type Scheme e.g.   ∀a,b.    a -> b -> a
 data Scheme = Scheme [TypeVar] Type deriving(Show)
 
--- 
+
 newtype Environment = Environment (Map.Map TypeVar Scheme) deriving(Show)
 emptyEnv :: Environment
 emptyEnv = Environment Map.empty
@@ -32,8 +33,10 @@ mergeEnvs (Environment env1) (Environment env2) = Environment $ Map.union env1 e
 -- Mapping from type variables to types
 -- e.g. "a" has type Primitive BoolT
 type Substitution = Map.Map TypeVar Type
+
 emptySubstitution :: Substitution
 emptySubstitution = Map.empty
+
 substCompose :: Substitution -> Substitution -> Substitution
 s1 `substCompose` s2 = (Map.map (apply s1) s2) `Map.union` s1
 
@@ -48,16 +51,17 @@ instance Substitutable Type where
   freeTypeVar (TypeVariable t)      = Set.singleton t
   freeTypeVar (FunctionType t1 t2)  = (freeTypeVar t1) `Set.union` (freeTypeVar t2)
   freeTypeVar (PrimitiveType _)     = Set.empty
-  freeTypeVar (TupleType types)     = freeTypeVar (types)
+  freeTypeVar (TupleType types)     = freeTypeVar types
   freeTypeVar (NonPrimType _ )      = Set.empty
   freeTypeVar (ArrayType t)         = freeTypeVar t
+  freeTypeVar (ParamType _ types)   = freeTypeVar types
   apply subst (TypeVariable x)      = case Map.lookup x subst of
                                         Nothing -> TypeVariable x
                                         Just t -> t
   apply subst (FunctionType t1 t2)  = FunctionType (apply subst t1) (apply subst t2)
   apply subst (TupleType types)     = TupleType (apply subst types)
   apply subst (ArrayType t)         = ArrayType (apply subst t)
-  -- TODO: rest of  the types
+  apply subst (ParamType name types)= ParamType name (apply subst types)
   -- PrimitiveType, NonPrimType
   apply subst t                     = t
 
@@ -74,6 +78,7 @@ instance Substitutable Environment where
   apply subst (Environment env) = Environment $ Map.map (apply subst) env 
 
 -- convert scheme to type
+-- e.g. from "∀a,b. a -> b -> a" to "a -> b -> a"
 instantiate :: Scheme -> Inference Type
 instantiate (Scheme vars t) = do
   newvars <- mapM (\_ -> newTypeVar) vars
@@ -91,29 +96,49 @@ unify t (TypeVariable v) = bindVariable v t
 unify (FunctionType l1 r1) (FunctionType l2 r2) = do
   subst1 <- unify l1 l2
   subst2 <- unify (apply subst1 r1) (apply subst1 r2)
-  return (subst1 `substCompose` subst2)
-unify (TupleType []) (TupleType []) = return (emptySubstitution)
+  return (subst2 `substCompose` subst1)
+unify (TupleType []) (TupleType []) =
+  return (emptySubstitution)
 unify (TupleType (t1:types1)) (TupleType (t2:types2)) = do
   subst1 <- unify t1 t2
   subst2 <- unify (TupleType types1) (TupleType types2) -- apply or not?
-  return (subst1 `substCompose` subst2) 
-unify (ArrayType t1) (ArrayType t2) = unify t1 t2
--- TODO: rest of the Types (ParamType, PolymorphicParamType)
+  return (subst2 `substCompose` subst1) 
+unify (ArrayType t1) (ArrayType t2) = 
+  unify t1 t2
+unify (ParamType name1 []) (ParamType name2 []) | name1 == name2 = 
+  return emptySubstitution
+unify (ParamType name1 (t1:types1)) (ParamType name2 (t2:types2)) =
+  if name1 == name2
+  then do
+    subst1 <- unify t1 t2
+    subst2 <- unify (ParamType name1 types1) (ParamType name2 types2)
+    return (subst2 `substCompose` subst1)
+  else throwError $ "types do not unify: " 
+                    ++ T.unpack (prettyPrint 0 t1) 
+                    ++ " vs. " 
+                    ++ T.unpack (prettyPrint 0 t2)
+
+-- TODO: rest of the Types (PolymorphicParamType)
 
 -- Error message should (maybe) eventually read as in haskell:
 -- "Expected type: t vs. actual type: t2 at position..."
 -- + TODO: error propagation (to comunicate the position). 
 --         or pass on Position to lower functions?
-unify t1 t2 = throwError $ "types do not unify: " ++ show t1 ++ " vs. " ++ show t2
+unify t1 t2 = throwError $ "types do not unify: "
+                           ++ T.unpack (prettyPrint 0 t1)
+                           ++ " vs. "
+                           ++ T.unpack (prettyPrint 0 t2)
 
 
 bindVariable :: TypeVar -> Type -> Inference Substitution
 bindVariable var typ
   | typ == TypeVariable var          = return emptySubstitution
   --                                   e.g. (\x -> x x)
-  | var `Set.member` freeTypeVar typ = throwError $ "Var: " ++ show var ++ " occurs in type: " ++ show typ
+  | var `Set.member` freeTypeVar typ = throwError $ "Var: \"" 
+                                                    ++ T.unpack (prettyPrint 0 (TypeVariable var)) 
+                                                    ++ "\" occurs in type: " 
+                                                    ++ T.unpack (prettyPrint 0 typ)
   | otherwise                        = return (Map.singleton var typ)
-
 
 
 type InferenceState = Int
@@ -137,4 +162,3 @@ newTypeVar = do
 runInference :: Inference a -> (Either String a, InferenceState)
 runInference t = runState (runExceptT t) initState
   where initState = 0
-
