@@ -67,7 +67,10 @@ instance Substitutable Type where
 
 instance Substitutable Scheme where
   freeTypeVar (Scheme vars t) = (freeTypeVar t) `Set.difference` (Set.fromList vars) 
-  apply subst (Scheme vars t) = Scheme vars (apply (foldr Map.delete subst vars) t) 
+  apply subst (Scheme vars t) = Scheme vars' t'
+    where
+      t' = (apply (foldr Map.delete subst vars) t)
+      vars' = Set.toList $ freeTypeVar t' 
 
 instance Substitutable a => Substitutable [a] where
   freeTypeVar l = foldr Set.union Set.empty (map freeTypeVar l) 

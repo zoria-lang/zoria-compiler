@@ -338,7 +338,7 @@ inferLambdaTuple pattern expr env = do
 inferLambdaNamed :: Pattern a -> Expr a -> Environment -> Inference (Substitution, Type)
 inferLambdaNamed (NamedPattern (Identifier id) pattern pos _ ) expr env = do
   (envPattern, typePattern) <- inferPattern pattern env
-  (subExpr, typeExpr)       <- infer expr (extendEnv envPattern ((TypeVar id), Scheme [] typePattern))
+  (subExpr, typeExpr)       <- infer expr (extendEnv envPattern (TypeVar id, Scheme (Set.toList (freeTypeVar typePattern)) typePattern))
   return(subExpr, FunctionType (apply subExpr typePattern) typeExpr)
 
 
