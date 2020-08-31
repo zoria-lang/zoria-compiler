@@ -1,9 +1,10 @@
 module Main where
 
 import Parser
+import TypeChecker
 import qualified Data.Text.IO as T
 import PrettyPrint (prettyPrint)
 import qualified Evaluator as Eval
 
 main :: IO ()
-main = parseProgram >>= T.putStrLn . prettyPrint 0
+main = parseProgram >>= typecheckProgram >>= putStrLn . show

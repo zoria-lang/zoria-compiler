@@ -1,0 +1,17 @@
+module Main
+
+import Foo
+
+let p@(x,y,z) : (Int, Bool, a -> ()) = 
+    (3,True, ignore)
+
+let r := {
+    let p@(x,y,z) := (3,True,ignore);
+    z 3
+
+}
+
+let blk := {
+    z (Just 3);
+    Just True
+}
